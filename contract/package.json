@@ -1,0 +1,19 @@
+{
+  "name": "@midnight-zkiss/contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "compact": "compact compile +0.31.1 src/festival-match.compact src/managed/festival-match",
+    "compact:skip-zk": "compact compile +0.31.1 --skip-zk src/festival-match.compact src/managed/festival-match",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@midnight-ntwrk/compact-runtime": "0.16.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0",
+    "vitest": "^4.1.0"
+  }
+}

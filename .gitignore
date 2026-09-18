@@ -1,0 +1,30 @@
+**/node_modules/
+# 로컬 비공개 상태 DB(levelPrivateStateProvider). 사용자 비밀이 들어가므로 절대 커밋하지 않는다
+**/midnight-level-db/
+# 컴파일 산출물(증명 키 약 60MB). `npm run compact`로 재생성
+**/managed/
+**/reports/
+*.log
+.DS_Store
+# 증명 서버 이미지에서 복사한 공개 파라미터(재생성 가능)
+**/.zk-params/
+
+# 로컬 설정과 키
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+
+# 로컬 기획·대화 기록. 제출 저장소에는 README/PROJECT만 포함
+/*.md
+!/README.md
+!/PROJECT.md
+/*.docx
+
+# 이전 조건 매칭 시제품은 로컬 기록으로만 유지
+/contract/src/private-match.compact
+/contract/src/witnesses.ts
+/contract/src/test/private-match.test.ts
+/e2e/src/private-match.e2e.test.ts

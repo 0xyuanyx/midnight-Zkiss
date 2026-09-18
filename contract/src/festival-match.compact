@@ -1,0 +1,119 @@
+// 축제 현장 번호팅 — 검증용 프로토타입 (2026-09-13)
+// 운영자: 입장 확인 후 티켓(자격 leaf)만 등록한다. 인스타 ID를 받지 않는다.
+// 참가자: 티켓 소속을 익명으로 증명하고 공개 카드(해시)·인스타 커밋·DH 공개키를 등록한다.
+// 좋아요: 두 사람만 계산할 수 있는 공유 비밀 s의 해시(tag)를 올린다. 같은 tag를 서로 올리면 매칭.
+// 매칭 후: 각자 s에서 만든 키로 암호화한 인스타 ID를 한 번만 올린다.
+// 계약 1개 = 행사 1회. 행사 종료 시각 이후에는 좋아요·공개가 거절된다.
+pragma language_version >= 0.20;
+import CompactStandardLibrary;
+
+struct Card {
+  cardHash: Bytes<32>;    // 사진·성별·나이·키 등 공개 카드 내용의 해시(카드 원본은 서버가 호스팅)
+  instaCommit: Bytes<32>; // 인스타 ID 커밋. 매칭 후 받은 값이 가입 때 값과 같은지 확인하는 데 쓴다
+  dhPk: Bytes<32>;        // 공유 비밀 계산용 공개키(X25519 등, 오프체인)
+}
+
+struct Match {
+  a: Bytes<32>;
+  b: Bytes<32>;
+}
+
+export sealed ledger operator: Bytes<32>;
+export sealed ledger eventEnd: Uint<64>;
+export sealed ledger maxLikes: Uint<8>;
+export ledger tickets: MerkleTree<10, Bytes<32>>;
+export ledger cards: Map<Bytes<32>, Card>;
+export ledger likeCount: Map<Bytes<32>, Uint<8>>;
+// tag → 먼저 좋아요한 가명. 누구를 좋아했는지는 저장하지 않는다
+export ledger pendingLikes: Map<Bytes<32>, Bytes<32>>;
+export ledger matches: Map<Bytes<32>, Match>;
+// H(tag, 보낸 사람) → 암호화된 인스타 ID
+export ledger contacts: Map<Bytes<32>, Bytes<96>>;
+
+witness operatorSecret(): Bytes<32>;
+witness ticketSecret(): Bytes<32>;
+witness ticketPath(leaf: Bytes<32>): MerkleTreePath<10, Bytes<32>>;
+witness pairSecret(peer: Bytes<32>): Bytes<32>;
+
+constructor(end: Uint<64>, likesPerPerson: Uint<8>) {
+  operator = disclose(operatorKey(operatorSecret()));
+  eventEnd = disclose(end);
+  maxLikes = disclose(likesPerPerson);
+}
+
+circuit operatorKey(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "fm:operator:pk"), sk]);
+}
+
+export pure circuit ticketLeaf(t: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "fm:ticket:leaf"), t]);
+}
+
+export pure circuit likeTag(s: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "fm:like:tag"), s]);
+}
+
+export pure circuit contactKey(tag: Bytes<32>, sender: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<3, Bytes<32>>>([pad(32, "fm:contact"), tag, sender]);
+}
+
+export pure circuit instaCommitment(insta: Bytes<32>, salt: Bytes<32>): Bytes<32> {
+  return persistentCommit<Bytes<32>>(insta, salt);
+}
+
+circuit myHandle(): Bytes<32> {
+  return disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "fm:handle"), ticketSecret()]));
+}
+
+// 운영자만: 입장 확인한 사람에게 준 티켓 비밀의 해시를 등록. 등록 건수는 원장에 공개된다
+export circuit issueTicket(leaf: Bytes<32>): [] {
+  assert(operatorKey(operatorSecret()) == operator, "not operator");
+  tickets.insert(disclose(leaf));
+}
+
+// 티켓 소속을 밝히지 않고 증명하고 카드를 등록. 티켓 1장당 카드 1장
+export circuit joinEvent(cardHash: Bytes<32>, instaCommit: Bytes<32>, dhPk: Bytes<32>): [] {
+  const t = ticketSecret();
+  const path = ticketPath(ticketLeaf(t));
+  assert(path.leaf == ticketLeaf(t), "path leaf mismatch");
+  assert(tickets.checkRoot(disclose(merkleTreePathRoot<10, Bytes<32>>(path))), "not a ticket holder");
+  assert(blockTimeLt(eventEnd), "event closed");
+  const me = myHandle();
+  assert(!cards.member(me), "ticket already used");
+  cards.insert(me, Card { cardHash: disclose(cardHash), instaCommit: disclose(instaCommit), dhPk: disclose(dhPk) });
+}
+
+// 좋아요. tag는 두 사람만 아는 s의 해시이며, 호출자가 s를 안다는 것을 증명한다(tag 복사로는 매칭 불가)
+export circuit like(peer: Bytes<32>): [] {
+  assert(blockTimeLt(eventEnd), "event closed");
+  const me = myHandle();
+  const p = disclose(peer);
+  assert(cards.member(me), "no card");
+  assert(cards.member(p), "unknown peer");
+  assert(p != me, "cannot like self");
+  const n = likeCount.member(me) ? likeCount.lookup(me) : 0 as Uint<8>;
+  assert(n < maxLikes, "like limit reached");
+  likeCount.insert(me, (n + 1) as Uint<8>);
+  const tag = disclose(likeTag(pairSecret(p)));
+  assert(!matches.member(tag), "already matched");
+  if (pendingLikes.member(tag)) {
+    const first = pendingLikes.lookup(tag);
+    assert(first != me, "already liked");
+    matches.insert(tag, Match { a: first, b: me });
+  } else {
+    pendingLikes.insert(tag, me);
+  }
+}
+
+// 매칭된 두 사람만, 행사 종료 전에, 한 번만(보고 나서 바꾸기 불가) 암호화된 연락처를 올린다
+export circuit revealContact(tag: Bytes<32>, ciphertext: Bytes<96>): [] {
+  assert(blockTimeLt(eventEnd), "event closed");
+  const t = disclose(tag);
+  assert(matches.member(t), "not matched");
+  const m = matches.lookup(t);
+  const me = myHandle();
+  assert(me == m.a || me == m.b, "not a match participant");
+  const k = contactKey(t, me);
+  assert(!contacts.member(k), "contact already revealed");
+  contacts.insert(k, disclose(ciphertext));
+}
