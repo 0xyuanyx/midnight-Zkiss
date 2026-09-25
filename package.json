@@ -6,7 +6,8 @@
   "workspaces": [
     "contract",
     "e2e",
-    "web"
+    "web",
+    "backend"
   ],
   "engines": {
     "node": ">=22"
@@ -20,7 +21,14 @@
     "test": "npm test -w contract",
     "devnet:up": "docker compose -f devnet.yml up -d --wait",
     "devnet:down": "docker compose -f devnet.yml down -v",
-    "e2e": "npm test -w e2e"
+    "e2e": "npm test -w e2e",
+    "backend:dev": "npm run dev -w backend",
+    "backend:worker": "npm run worker -w backend",
+    "backend:test": "npm test -w backend",
+    "backend:typecheck": "npm run typecheck -w backend",
+    "backend:db:up": "docker compose -f backend-compose.yml up -d --wait",
+    "backend:db:migrate": "npm run db:migrate -w backend",
+    "backend:db:seed": "npm run db:seed -w backend"
   },
   "overrides": {
     "@midnight-ntwrk/ledger-v8": "8.1.0",
