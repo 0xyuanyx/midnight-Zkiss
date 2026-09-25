@@ -28,6 +28,24 @@ Midnight는 행사 참가 자격과 정해진 공개 승인 조건을 검증하�
 
 제품 흐름, 개인정보 경계와 남은 검증 과제는 [PROJECT.md](PROJECT.md)에 정리했습니다.
 
-## 코드 출처
+## 구조
+
+```text
+web/src/pages/                          지정된 Figma 화면과 로컬 상호작용
+web/src/components/                     헤더·버튼·하단 메뉴 등 공통 컴포넌트
+web/src/state/                          메모리 기반 데모 상태와 SNS 공개 조건
+web/public/assets/                      Figma 원본 SVG·AI 프로필 예시 이미지
+web/tests/                              모바일 Chromium·WebKit 흐름 테스트
+contract/src/festival-match.compact       축제 매칭 계약 시제품
+contract/src/test/festival-match.test.ts 시뮬레이터 테스트
+e2e/src/festival-match.e2e.test.ts       Local Devnet 거래 시나리오
+e2e/src/wallet.ts                        개발용 지갑·연결 코드
+e2e/src/wasm-prover.ts                   로컬 WASM 증명 경로
+devnet.yml                               Local Devnet 구성
+```
+
+Compact 0.31.1, `compact-runtime` 0.16.0, `midnight-js` 4.1.1, `ledger-v8` 8.1.0 조합을 사용합니다. 개발용 참가권은 실제 학생·행사 참가 여부를 확인하지 않습니다. AI 소개의 진실성이나 사진 삭제는 ZK가 증명하지 않습니다.
+
+## 출처
 
 `e2e/src/wallet.ts`는 [midnightntwrk/example-counter](https://github.com/midnightntwrk/example-counter)의 Apache-2.0 라이선스 지갑·프로바이더 코드를 수정해 사용했습니다.

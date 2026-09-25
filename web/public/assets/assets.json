@@ -1,0 +1,90 @@
+{
+  "fileKey": "yUXUZElCOVQSdQV04jN8Ux",
+  "assets": [
+    {
+      "file": "analysis-orb.svg",
+      "node": "2:162",
+      "slot": "analysis-art center, inset 18px",
+      "width": 155,
+      "height": 155
+    },
+    {
+      "file": "analysis-ring.svg",
+      "node": "2:163",
+      "slot": "analysis-art outer ring",
+      "width": 191,
+      "height": 191
+    },
+    {
+      "file": "profile-violet.svg",
+      "node": "18:173",
+      "slot": "profile preview top right",
+      "width": 230,
+      "height": 230
+    },
+    {
+      "file": "profile-blue.svg",
+      "node": "18:174",
+      "slot": "profile preview middle left",
+      "width": 230,
+      "height": 230
+    },
+    {
+      "file": "profile-pink.svg",
+      "node": "18:175",
+      "slot": "profile preview bottom right",
+      "width": 354,
+      "height": 354
+    },
+    {
+      "file": "profile-ai-example.png",
+      "node": "18:197",
+      "slot": "profile card centered AI image example",
+      "width": 1254,
+      "height": 1254,
+      "renderedWidth": 96,
+      "renderedHeight": 96
+    },
+    {
+      "file": "feed-lime.png",
+      "node": "18:215",
+      "alsoUsedAt": [
+        "18:395",
+        "18:519"
+      ],
+      "slot": "lime full card background with bottom blur overlay and interest avatar",
+      "width": 1254,
+      "height": 1254,
+      "renderedSlots": [
+        "responsive feed image, 330px wide at 402px viewport, object-fit cover",
+        "44px square interest avatar"
+      ]
+    },
+    {
+      "file": "feed-mocha.png",
+      "node": "18:238",
+      "alsoUsedAt": [
+        "18:533"
+      ],
+      "slot": "mocha full card background with bottom blur overlay and interest avatar",
+      "width": 1254,
+      "height": 1254,
+      "renderedSlots": [
+        "responsive feed image, 330px wide at 402px viewport, object-fit cover",
+        "44px square interest avatar"
+      ]
+    },
+    {
+      "file": "feed-mocha-bright.png",
+      "source": "AI edit of feed-mocha.png: bright pastel background, ivory knit and headphones",
+      "width": 1254,
+      "height": 1254,
+      "slot": "mocha feed image and interest avatar"
+    },
+    {
+      "file": "match-dim.svg",
+      "node": "2:424",
+      "slot": "mutual match dialog backdrop, viewport coverage"
+    }
+  ]
+}

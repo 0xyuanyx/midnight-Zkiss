@@ -5,12 +5,17 @@
   "type": "module",
   "workspaces": [
     "contract",
-    "e2e"
+    "e2e",
+    "web"
   ],
   "engines": {
     "node": ">=22"
   },
   "scripts": {
+    "dev": "npm run dev -w web --",
+    "build": "npm run build -w web",
+    "preview": "npm run preview -w web --",
+    "test:web": "npm test -w web --",
     "compact": "npm run compact -w contract",
     "test": "npm test -w contract",
     "devnet:up": "docker compose -f devnet.yml up -d --wait",
