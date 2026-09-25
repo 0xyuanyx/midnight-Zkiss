@@ -1,4 +1,7 @@
 **/node_modules/
+**/dist/
+**/test-results/
+**/playwright-report/
 # 로컬 비공개 상태 DB(levelPrivateStateProvider). 사용자 비밀이 들어가므로 절대 커밋하지 않는다
 **/midnight-level-db/
 # 컴파일 산출물(증명 키 약 60MB). `npm run compact`로 재생성
