@@ -78,6 +78,10 @@ LOCAL_TLS_CERT=/path/to/local.pem LOCAL_TLS_KEY=/path/to/local.key \
 
 ## Vercel 배포
 
+**배포 주소:** [zkiss.vercel.app](https://zkiss.vercel.app) · [화면 미리보기](https://zkiss.vercel.app/preview)
+
+2026-09-26 Vercel production 배포 완료. 현재는 프론트만 배포되어 있으며 공개 백엔드는 연결하지 않았습니다. 입장·Gemini 생성·대화·SNS 공개의 실제 동작은 로컬 환경에서 사용하며, 위 주소에서의 전체 흐름은 아직 검증 완료가 아닙니다. 소스는 `codex/sns-mvp-vercel` 브랜치에 푸시했으며 원격 `main`의 별도 변경과는 아직 병합하지 않았습니다.
+
 현재 구성은 **Vercel 프론트 + 별도 상시 실행 API·워커·PostgreSQL·Midnight 서비스**입니다. Vercel에 프론트를 올리는 것만으로 이 Mac의 로컬 API나 Devnet이 공개되는 것은 아닙니다.
 
 공개 API가 없으면 `/preview`에서 화면을 확인할 수 있으며, 일반 API 요청은 `503 SERVICE_NOT_CONFIGURED`로 응답합니다. 실제 동작으로 가장하는 예시 응답을 반환하지 않습니다.
