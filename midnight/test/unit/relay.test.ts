@@ -25,6 +25,14 @@ it.each(['success', 'partial', 'failure'])('recovers finalized exact-transaction
 it('does not claim submission when indexer outcome is unknown', async () => {
   vi.spyOn(Transaction, 'deserialize').mockReturnValue({ identifiers: () => ['bb'] } as any);
   outcome.mockResolvedValue('unknown');
-  const relay = createRelay({ network: 'undeployed', endpoints: { indexer: 'http://unused' } as any, providers: { midnightProvider: { submitTx: async () => { throw Error('SubmissionUnknown'); } } } as any });
+  const relay = createRelay({ network: 'undeployed', endpoints: { indexer: 'http://unused' } as any, outcomeWaitMs: 30, outcomePollMs: 10, providers: { midnightProvider: { submitTx: async () => { throw Error('SubmissionUnknown'); } } } as any });
   await expect(relay.submit('AAAA')).rejects.toThrow('SubmissionUnknown');
+  expect(outcome.mock.calls.length).toBeGreaterThan(1);
+});
+it('waits for block inclusion after the node watch drops before indexing', async () => {
+  vi.spyOn(Transaction, 'deserialize').mockReturnValue({ identifiers: () => ['bb'] } as any);
+  outcome.mockResolvedValueOnce('unknown').mockRejectedValueOnce(Error('indexer busy')).mockResolvedValue('success');
+  const relay = createRelay({ network: 'undeployed', endpoints: { indexer: 'http://unused' } as any, outcomeWaitMs: 1000, outcomePollMs: 10, providers: { midnightProvider: { submitTx: async () => { throw Error('disconnected: 1000 Normal Closure'); } } } as any });
+  await expect(relay.submit('AAAA')).resolves.toBe('bb');
+  expect(outcome).toHaveBeenCalledTimes(3);
 });

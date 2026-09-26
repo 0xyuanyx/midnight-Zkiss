@@ -12,7 +12,7 @@ import { ZK_PATH } from './operator.js';
 import { zkissIndexerView } from '../ledger-decoder.js';
 
 type Providers=Awaited<ReturnType<typeof configureProviders>>;
-export function createRelay(options:{network:string; endpoints:Config; walletSeed?:string; providers?:Providers; indexerUrl?:string; indexerWsUrl?:string}) {
+export function createRelay(options:{network:string; endpoints:Config; walletSeed?:string; providers?:Providers; indexerUrl?:string; indexerWsUrl?:string; outcomeWaitMs?:number; outcomePollMs?:number}) {
   // Keep publicly reachable sponsorship opt-in until economic limits are validated on a shared network.
   if(options.network!=='undeployed') throw Error('RELAY_DEVNET_ONLY');
   let wallet:Awaited<ReturnType<typeof buildWallet>>|undefined;
@@ -93,11 +93,16 @@ export function createRelay(options:{network:string; endpoints:Config; walletSee
       catch(error) {
         // A finalized broadcast may outlive the HTTP response or process. Only
         // chain evidence makes an exact-byte retry safe to report as submitted.
-        try {
-          const outcome=await zkissIndexerView(options.endpoints.indexer).txOutcome(expected);
-          if(outcome==='success'||outcome==='partial'||outcome==='failure')return expected;
-        } catch { /* Indexer outage leaves the original outcome unknown. */ }
-        throw error;
+        // A dropped node watch can precede block inclusion, so poll the indexer briefly.
+        const deadline=Date.now()+(options.outcomeWaitMs??30_000);
+        for(;;) {
+          try {
+            const outcome=await zkissIndexerView(options.endpoints.indexer).txOutcome(expected);
+            if(outcome==='success'||outcome==='partial'||outcome==='failure')return expected;
+          } catch { /* Indexer outage leaves the original outcome unknown. */ }
+          if(Date.now()>=deadline)throw error;
+          await new Promise(resolve=>setTimeout(resolve,options.outcomePollMs??3_000));
+        }
       }
     });},
     async stop(){await wallet?.wallet.stop();},
