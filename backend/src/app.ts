@@ -7,6 +7,7 @@ import type { Pool } from "pg";
 import type { Config } from "./config.js";
 import { ApiError, envelope, fail } from "./http.js";
 import { sessions } from "./routes/sessions.js";
+import { profileImages } from "./routes/profile-images.js";
 import { profiles } from "./routes/profiles.js";
 import { chain } from "./routes/chain.js";
 import { demoAi, type AiProvider } from "./adapters/ai.js";
@@ -32,7 +33,7 @@ export async function buildApp(options: {
   await app.register(multipart, {
     limits: { fileSize: 5 * 1024 * 1024, files: 1, fields: 2, parts: 3 },
   });
-  await app.register(rateLimit, { max: 300, timeWindow: "1 minute" });
+  await app.register(rateLimit, { max: 300, timeWindow: "1 minute", allowList: (req) => !req.url.startsWith("/api/") });
   app.addHook("onRequest", async (req) => {
     if (["GET", "HEAD", "OPTIONS"].includes(req.method)) return;
     const origin = req.headers.origin;
@@ -110,6 +111,7 @@ export async function buildApp(options: {
     ),
     !!options.ai || (options.config.aiMode ?? options.config.mode) === "demo",
   );
+  profileImages(app, options.pool);
   profiles(
     app,
     options.pool,

@@ -1,0 +1,54 @@
+{
+  "name": "@midnight-zkiss/midnight",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ZKiss Midnight integration: admission/session binding and two-party SNS reveal consent (Claude Code workspace, independent of backend/)",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "compact": "compact compile +0.31.1 contract/zkiss.compact contract/managed/zkiss",
+    "compact:skip-zk": "compact compile +0.31.1 --skip-zk contract/zkiss.compact contract/managed/zkiss",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run test/unit",
+    "test:devnet": "vitest run test/devnet",
+    "manifest": "vitest run test/tools",
+    "deploy:event": "tsx scripts/deploy-event.ts",
+    "test:integration": "vitest run test/integration",
+    "compact:sns": "compact compile +0.31.1 sns/zkiss.compact sns/managed/sns",
+    "test:sns": "vitest run test/sns"
+  },
+  "dependencies": {
+    "@hpke/core": "1.9.0",
+    "@midnight-ntwrk/compact-js": "2.5.1",
+    "@midnight-ntwrk/compact-runtime": "0.16.0",
+    "@midnight-ntwrk/ledger-v8": "8.1.0",
+    "@midnight-ntwrk/midnight-js": "4.1.1",
+    "@midnight-ntwrk/midnight-js-http-client-proof-provider": "4.1.1",
+    "@midnight-ntwrk/midnight-js-indexer-public-data-provider": "4.1.1",
+    "@midnight-ntwrk/midnight-js-level-private-state-provider": "4.1.1",
+    "@midnight-ntwrk/midnight-js-node-zk-config-provider": "4.1.1",
+    "@midnight-ntwrk/wallet-sdk-address-format": "3.1.0",
+    "@midnight-ntwrk/wallet-sdk-dust-wallet": "3.0.0",
+    "@midnight-ntwrk/wallet-sdk-facade": "3.0.0",
+    "@midnight-ntwrk/wallet-sdk-hd": "3.0.0",
+    "@midnight-ntwrk/wallet-sdk-shielded": "2.1.0",
+    "@midnight-ntwrk/wallet-sdk-unshielded-wallet": "2.1.0",
+    "rxjs": "^7.8.2",
+    "ws": "^8.20.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/ws": "^8.18.1",
+    "tsx": "4.23.15",
+    "typescript": "^5.9.0",
+    "vitest": "^4.1.0"
+  },
+  "overrides": {
+    "@midnight-ntwrk/ledger-v8": "8.1.0",
+    "@midnight-ntwrk/compact-runtime": "0.16.0",
+    "smoldot": "npm:@aspect-build/empty@0.0.0",
+    "@midnight-ntwrk/onchain-runtime-v3": "3.0.0"
+  }
+}

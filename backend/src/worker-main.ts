@@ -1,3 +1,4 @@
+import { processRelayJobs } from './relay-worker.js';
 import { demoMidnight, createDemoOperator } from "./adapters/demo-midnight.js";
 import { setTimeout as delay } from "node:timers/promises";
 import { runtime } from "./runtime.js";
@@ -30,8 +31,10 @@ try {
     try {
       await maintain(pool);
       if (midnight) await reconcile(pool, midnight);
-      if (midnight && operator)
+      if (midnight && operator) {
         await processChainJobs(pool, midnight, operator);
+        await processRelayJobs(pool, operator);
+      }
     } catch {
       console.error(JSON.stringify({ code: "WORKER_TICK_FAILED" }));
     }

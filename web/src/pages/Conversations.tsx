@@ -2,14 +2,14 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { Avatar, BottomNav, Button, EmptyState, Header, PageHeading } from '../components/ui';
 import { ImpressionCard } from '../components/ImpressionCard';
+import { copyText } from '../state/clipboard';
 import { canReveal, emptyConversation, sampleProfile, useSession } from '../state/session';
-import { findPerson, ownImpression } from '../state/people';
 
 const SNS_REQUEST_MIN_MESSAGES = 4;
 
 export function MyPage() {
-  const { profile, profileCreated } = useSession();
-  const displayedProfile = profileCreated ? profile : sampleProfile;
+  const { profile, profileCreated, ownImpression, scene } = useSession();
+  const displayedProfile = profileCreated || !scene ? profile : sampleProfile;
   return <div className="screen tab-page my-profile-page">
     <Header />
     <main className="page-content" aria-label="내 정보 화면">
@@ -22,14 +22,14 @@ export function MyPage() {
 }
 
 export function ChatsPage() {
-  const { matchedIds, conversations } = useSession();
+  const { matchedIds, conversations, people } = useSession();
   return <div className="screen tab-page chats-page">
     <Header />
     <main className="page-content">
       <PageHeading title="나의 대화" description="서로의 호감에서 시작된 익명 대화" />
       {matchedIds.length > 0 ? <>
         {matchedIds.map(id => {
-          const person = findPerson(id)!;
+          const person = people.find(p => p.id === id)!;
           const conversation = conversations[id] ?? emptyConversation;
           const latest = conversation.messages.at(-1);
           return <Link className="conversation-row" to={`/chats/${id}`} key={id}>
@@ -46,9 +46,9 @@ export function ChatsPage() {
 }
 
 function SharedPanel({ peerId }: { peerId: string }) {
-  const { profile, conversations } = useSession();
+  const { profile, conversations, people, ownImpression, scene } = useSession();
   const { consent } = conversations[peerId] ?? emptyConversation;
-  const partner = findPerson(peerId)!;
+  const partner = people.find(p => p.id === peerId)!;
   const [notice, setNotice] = useState('');
   // The visibility gate is enforced here as well as at the route boundary.
   if (!canReveal(consent)) return null;
@@ -57,8 +57,13 @@ function SharedPanel({ peerId }: { peerId: string }) {
     <h2>서로 동의했어요</h2>
     <p>두 사람의 SNS가 공개됐어요.<br />행사가 끝난 뒤에도 대화를 이어가 보세요.</p>
     <div className="social-cards">
-      {[{ name: partner.name, image: partner.image, pink: false }, { name: profile.nickname, image: ownImpression.image, pink: true }].map(person => <button key={person.name + person.pink} className="social-card" onClick={() => setNotice('이 화면은 상호 공개 예시예요. 연결된 실제 SNS 계정은 없습니다.')}>
-        <Avatar name={person.name} image={person.image} pink={person.pink} /><span>{person.name}<br />SNS 바로가기</span>
+      {[{ name: partner.name, image: partner.image, pink: false }, { name: profile.nickname, image: ownImpression.image, pink: true }].map(person => <button key={person.name + person.pink} className="social-card" onClick={async () => {
+        if (scene) { setNotice('미리보기에서는 SNS ID를 복사하지 않아요.'); return; }
+        const sns = person.pink ? profile.snsId : conversations[peerId]?.peerSns;
+        try { await copyText(sns ?? ''); setNotice(`${sns} 복사했어요.`); }
+        catch { setNotice('복사하지 못했어요. 다시 눌러 주세요.'); }
+      }}>
+        <Avatar name={person.name} image={person.image} pink={person.pink} /><span>{person.name}<br />SNS ID 복사</span>
       </button>)}
     </div>
     {notice && <p className="social-notice" role="status">{notice}</p>}
@@ -66,8 +71,18 @@ function SharedPanel({ peerId }: { peerId: string }) {
 }
 
 function RequestPanel({ peerId }: { peerId: string }) {
-  const { conversations, updateConversation } = useSession();
+  const { conversations, updateConversation, scene, requestReveal, busy } = useSession();
   const { consent } = conversations[peerId] ?? emptyConversation;
+  if (!scene) {
+    const c = conversations[peerId];
+    if (!c?.canRequestReveal) return null;
+    const active = ['collecting', 'requested', 'awaiting_chain', 'authorized'].includes(c.revealStatus ?? '');
+    return <section className="request-panel" aria-live="polite"><h2>SNS 상호 공개</h2>
+      <p>{['awaiting_chain', 'authorized'].includes(c.revealStatus ?? '') ? '서로의 SNS를 공개할 준비를 하고 있어요.' : c.revealStatus === 'collecting' ? '공개 요청을 준비하고 있어요.' : consent.mine ? '상대방의 동의를 기다리고 있어요.' : '두 사람 모두 동의하면 SNS를 확인할 수 있어요.'}</p>
+      {!consent.mine && <Button disabled={busy || (active && c.revealStatus !== 'requested')} onClick={() => void requestReveal(peerId)}>{c.revealStatus === 'requested' ? 'SNS 공개 동의하기' : 'SNS 공개 요청하기'}</Button>}
+      {active && <Button variant="outline" disabled={busy} onClick={() => void requestReveal(peerId, true)}>공개 요청 취소하기</Button>}
+    </section>;
+  }
   return <section className="request-panel" aria-live="polite">
     <h2>{consent.mine ? '상대방의 동의를 기다리고 있어요' : '대화를 계속 이어가고 싶나요?'}</h2>
     <p>{consent.mine ? '아직 SNS는 공개되지 않았어요. 데모에서는 상대방 동의를 재현해 다음 화면을 확인할 수 있어요.' : '서로 동의해야 SNS가 공개돼요. 먼저 요청해도 내 SNS가 바로 보이지 않아요.'}</p>
@@ -84,18 +99,18 @@ export function ChatRoomPage({ sharedRoute = false }: { sharedRoute?: boolean })
 }
 
 function ChatRoom({ peerId, sharedRoute }: { peerId: string; sharedRoute: boolean }) {
-  const { matchedIds, conversations, updateConversation } = useSession();
-  const partner = findPerson(peerId);
+  const { matchedIds, conversations, markRead, sendMessage, people, busy, scene } = useSession();
+  const partner = people.find(p => p.id === peerId);
   const { messages, consent, unreadCount } = conversations[peerId] ?? emptyConversation;
   const matched = matchedIds.includes(peerId);
   const [draft, setDraft] = useState('');
   const thread = useRef<HTMLDivElement>(null);
   const previousMessageCount = useRef(messages.length);
   const shared = canReveal(consent);
-  const snsRequestAvailable = messages.length >= SNS_REQUEST_MIN_MESSAGES;
+  const snsRequestAvailable = messages.length >= SNS_REQUEST_MIN_MESSAGES || (!scene && Boolean(conversations[peerId]?.revealStatus));
   const navigate = useNavigate();
 
-  useEffect(() => { if (matched && unreadCount > 0) updateConversation(peerId, current => ({ ...current, unreadCount: 0 })); }, [matched, peerId, unreadCount, updateConversation]);
+  useEffect(() => { if (matched && unreadCount > 0) markRead(peerId); }, [matched, peerId, unreadCount, markRead]);
 
   useEffect(() => {
     if (thread.current && (shared || messages.length > previousMessageCount.current)) {
@@ -111,12 +126,11 @@ function ChatRoom({ peerId, sharedRoute }: { peerId: string; sharedRoute: boolea
   if (!matched || !partner) return <Navigate to="/chats" replace />;
   if (sharedRoute && !shared) return <Navigate to={`/chats/${peerId}`} replace />;
 
-  function send(event: FormEvent) {
+  async function send(event: FormEvent) {
     event.preventDefault();
     const text = draft.trim();
     if (!text) return;
-    updateConversation(peerId, current => ({ ...current, messages: [...current.messages, { id: crypto.randomUUID(), author: 'me', text }] }));
-    setDraft('');
+    if (await sendMessage(peerId, text)) setDraft('');
   }
 
   return <div className={`screen chat-room ${shared ? 'chat-room--shared' : ''}`}>
@@ -133,8 +147,8 @@ function ChatRoom({ peerId, sharedRoute }: { peerId: string; sharedRoute: boolea
       {shared ? <SharedPanel peerId={peerId} /> : snsRequestAvailable ? <RequestPanel peerId={peerId} /> : null}
     </main>
     <form className="composer" onSubmit={send}>
-      <input aria-label="메시지" placeholder="메시지를 입력하세요" value={draft} onChange={e => setDraft(e.target.value)} maxLength={1000} autoComplete="off" />
-      <button className="send-button" aria-label="메시지 보내기" type="submit" disabled={!draft.trim()}>↗</button>
+      <input disabled={busy} aria-label="메시지" placeholder="메시지를 입력하세요" value={draft} onChange={e => setDraft(e.target.value)} maxLength={1000} autoComplete="off" />
+      <button className="send-button" aria-label="메시지 보내기" type="submit" disabled={!draft.trim() || busy || (!scene && !conversations[peerId]?.canSend)}>↗</button>
     </form>
     <BottomNav active="chats" />
   </div>;

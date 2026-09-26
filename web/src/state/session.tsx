@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, type ReactNode } from 'react';
-import { findPerson } from './people';
+import { findPerson, people, ownImpression } from './people';
+import { LiveSessionProvider } from './live-session';
 
 export interface Profile {
   nickname: string;
@@ -16,7 +17,7 @@ export type Consent = { mine: boolean; partner: boolean };
 export const canReveal = (consent: Consent) => consent.mine && consent.partner;
 
 export const sampleProfile: Profile = { nickname: '유진', age: '26', gender: '여성', mbti: 'ENFP', snsId: '@yujin', introduction: '새로운 사람과 가벼운 대화를 좋아해요.', photoReady: true };
-const emptyProfile: Profile = { nickname: '', age: '', gender: '', mbti: '', snsId: '', introduction: '', photoReady: false };
+export const emptyProfile: Profile = { nickname: '', age: '', gender: '', mbti: '', snsId: '', introduction: '', photoReady: false };
 export const initialMessages: Message[] = [
   { id: 'hello', author: 'partner', text: '안녕하세요! 오늘 행사에서\n어떤 부스가 가장 기억에 남았어요?' },
   { id: 'reply', author: 'me', text: '저는 전시 부스가 제일 좋았어요 🙂\n라임님은요?' },
@@ -41,26 +42,37 @@ function useSessionState(scene?: string) {
   } : {});
   const [pendingMatch, setPendingMatch] = useState<string | null>(scene === 'mutual-match' ? 'lime' : null);
   const matchedIds = interests.sent.filter(id => interests.received.includes(id));
-  function sendInterest(id: string) {
-    if (!findPerson(id) || interests.sent.includes(id)) return;
+  async function sendInterest(id: string) {
+    if (!findPerson(id) || interests.sent.includes(id)) return false;
     if (interests.received.includes(id)) setPendingMatch(id);
     setInterests(current => current.sent.includes(id) ? current : { ...current, sent: [...current.sent, id] });
+    return true;
   }
   function updateConversation(id: string, update: (current: Conversation) => Conversation) {
     if (!matchedIds.includes(id)) return;
     setConversations(current => ({ ...current, [id]: update(current[id] ?? emptyConversation) }));
   }
-  return { pendingMatch, dismissMatch: () => setPendingMatch(null), profile, setProfile, profileCreated, setProfileCreated, matched: matchedIds.length > 0, matchedIds, interests, sendInterest, conversations, updateConversation, scene };
+  return { profilePublished: profileCreated, people, ownImpression, participantCount: people.length, loading: false, busy: false, error: '', eventName: 'MIDNIGHT SEOUL', mode: 'preview' as string, aiMode: 'demo' as string,
+    selectPhoto: (_file: File) => setProfile(current => ({ ...current, photoReady: true })),
+    join: async () => true, analyze: async () => true, publish: async () => true,
+    sendMessage: async (id: string, text: string) => { updateConversation(id, current => ({ ...current, messages: [...current.messages, { id: crypto.randomUUID(), author: 'me', text }] })); return true; },
+    markRead: (id: string) => updateConversation(id, current => ({ ...current, unreadCount: 0 })),
+    requestReveal: async (_id: string, _cancel = false) => false,
+    pendingMatch, dismissMatch: () => setPendingMatch(null), profile, setProfile, profileCreated, setProfileCreated, matched: matchedIds.length > 0, matchedIds, interests, sendInterest, conversations, updateConversation, scene };
 }
 
-export interface Conversation { messages: Message[]; consent: Consent; unreadCount: number }
+export interface Conversation { messages: Message[]; consent: Consent; unreadCount: number; revealStatus?: string; peerSns?: string; canRequestReveal?: boolean; canSend?: boolean }
 export const emptyConversation: Conversation = { messages: [], consent: { mine: false, partner: false }, unreadCount: 0 };
 
-type Session = ReturnType<typeof useSessionState>;
-const SessionContext = createContext<Session | null>(null);
+export type Session = ReturnType<typeof useSessionState>;
+export const SessionContext = createContext<Session | null>(null);
 
 /** In-memory demo state only. Photos, messages, and identity are never persisted. */
 export function SessionProvider({ children, scene }: { children: ReactNode; scene?: string }) {
+  if (!scene) return <LiveSessionProvider>{children}</LiveSessionProvider>;
+  return <PreviewSessionProvider scene={scene}>{children}</PreviewSessionProvider>;
+}
+function PreviewSessionProvider({ children, scene }: { children: ReactNode; scene: string }) {
   const state = useSessionState(scene);
   return <SessionContext.Provider value={state}>{children}</SessionContext.Provider>;
 }

@@ -16,12 +16,12 @@ for (const scene of scenes) {
   });
 }
 
-test('입력 검증부터 프로필 생성, 피드, 하단 탭까지 연결된다', async ({ page }) => {
+test('입력 검증부터 프로필 생성, 피드, 하단 탭까지 연결된다', async ({ page, baseURL }) => {
   const unexpectedRequests: string[] = [];
   page.on('request', request => {
-    if (request.method() === 'POST' || !request.url().startsWith('http://127.0.0.1:5173')) unexpectedRequests.push(request.url());
+    if (request.method() === 'POST' || new URL(request.url()).origin !== new URL(baseURL!).origin) unexpectedRequests.push(request.url());
   });
-  await page.goto('/');
+  await page.goto('/preview/entry');
   await page.getByRole('button', { name: '행사 프로필 만들기' }).click();
   const next = page.getByRole('button', { name: '다음' });
   await expect(page.getByText('1/2', { exact: true })).toBeVisible();
@@ -50,7 +50,7 @@ test('입력 검증부터 프로필 생성, 피드, 하단 탭까지 연결된�
   await expect(page.getByText('# ENFP')).toBeVisible();
   await expect(page.getByText('전시와 음악을 좋아해요.')).toBeVisible();
   await expect(page.getByRole('img', { name: 'AI가 생성한 프로필 이미지 예시' })).toBeVisible();
-  await page.getByRole('link', { name: '이 프로필로 시작' }).click();
+  await page.getByRole('button', { name: '이 프로필로 시작' }).click();
   await expect(page).toHaveURL('/home');
   await expect(page.getByRole('heading', { name: '지금 만날 사람들' })).toBeVisible();
   await page.getByRole('link', { name: '호감', exact: true }).click();
@@ -131,7 +131,7 @@ test('한쪽 요청은 SNS 공개가 아니며 취소할 수 있다', async ({ p
   await page.getByRole('button', { name: 'SNS 공개 요청하기' }).click();
   await expect(page.getByRole('heading', { name: '상대방의 동의를 기다리고 있어요' })).toBeVisible();
   await expect(page.getByRole('button', { name: '상대방 동의 시뮬레이션' })).toBeVisible();
-  await expect(page.getByRole('button', { name: /SNS 바로가기/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /SNS ID 복사/ })).toHaveCount(0);
   await expect(page.getByText('서로 동의했어요')).toHaveCount(0);
   await page.getByRole('button', { name: '공개 요청 취소하기' }).click();
   await expect(page.getByRole('button', { name: 'SNS 공개 요청하기' })).toBeVisible();
@@ -142,16 +142,16 @@ test('한쪽 요청은 SNS 공개가 아니며 취소할 수 있다', async ({ p
 
 test('SNS 완료 주소를 직접 열어도 미동의 상태에서는 공개되지 않는다', async ({ page }) => {
   await page.goto('/chats/lime/shared');
-  await expect(page).toHaveURL('/chats');
-  await expect(page.getByRole('button', { name: /SNS 바로가기/ })).toHaveCount(0);
+  await expect(page).toHaveURL('/');
+  await expect(page.getByRole('button', { name: /SNS ID 복사/ })).toHaveCount(0);
   await expect(page.getByText('서로 동의했어요')).toHaveCount(0);
 });
 
 test('상호 동의 예시만 완료 화면을 보여준다', async ({ page }) => {
   await page.goto('/preview/shared');
   await expect(page.getByRole('heading', { name: '서로 동의했어요' })).toBeVisible();
-  await page.getByRole('button', { name: '라임 SNS 바로가기' }).click();
-  await expect(page.getByRole('status')).toContainText('연결된 실제 SNS 계정은 없습니다');
+  await page.getByRole('button', { name: '라임 SNS ID 복사' }).click();
+  await expect(page.getByRole('status')).toContainText('미리보기에서는 SNS ID를 복사하지 않아요.');
 });
 
 test('좁은 모바일과 데스크톱에서 가로 스크롤 없이 표시된다', async ({ page }) => {

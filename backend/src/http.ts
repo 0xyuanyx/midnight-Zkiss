@@ -85,6 +85,7 @@ export async function authenticate(db: Pool | PoolClient, req: FastifyRequest) {
   return p;
 }
 export interface RouteOptions {
+  bodyLimit?: number;
   active?: boolean;
   phase?: "join" | "discover" | "chat" | "none";
   idempotent?: boolean;
@@ -101,6 +102,7 @@ export function router(app: FastifyInstance, pool: Pool, config: Config) {
   ) => {
     app.route({
       method,
+      bodyLimit: options.bodyLimit,
       url: "/api/v1" + url,
       handler: async (request, reply) => {
         let cleanup: (() => void) | undefined;

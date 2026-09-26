@@ -67,6 +67,7 @@ export function revealDto(r: Row, uid: string) {
     conversationId: r.conversation_id,
     version: r.version,
     status,
+    mySlotIndex: a ? 0 : 1,
     myDecision: r.decisions[uid] ?? "pending",
     peerDecision: r.decisions[peer] ?? "pending",
     transcriptHash: r.transcript_hash,

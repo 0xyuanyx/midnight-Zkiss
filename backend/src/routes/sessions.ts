@@ -61,6 +61,7 @@ export function sessions(
         mode: config.mode,
         aiMode: config.aiMode ?? config.mode,
         aiReady,
+        admissionMode: config.admissionMode ?? "midnight",
       },
       req,
     );
@@ -74,12 +75,16 @@ export function sessions(
     },
     async (req, reply) => {
       const b = z
-        .object({ eventId: z.string().min(1).max(200) })
+        .object({
+          eventId: z.string().min(1).max(200).optional(),
+          devicePublicKey: z.string().regex(/^[A-Za-z0-9+/]{43}=$/).refine(v => Buffer.from(v, "base64").length === 32).optional(),
+        })
         .strict()
-        .parse(req.body);
+        .parse(req.body ?? {});
+      const eventId = b.eventId ?? config.defaultEventId ?? "evt_mvp";
       return transaction(pool, async (db) => {
         const e = await one(db, "SELECT * FROM events WHERE id=$1 FOR UPDATE", [
-          b.eventId,
+          eventId,
         ]);
         need(e);
         if (req.cookies[cookieName]) {
@@ -89,7 +94,7 @@ export function sessions(
             [hash(req.cookies[cookieName])],
           );
           if (existing) {
-            if (existing.event_id !== b.eventId)
+            if (existing.event_id !== eventId)
               fail(409, "EVENT_SESSION_CONFLICT");
             return envelope(me(existing, config), req);
           }
@@ -99,13 +104,15 @@ export function sessions(
           409,
           "EVENT_CLOSED",
         );
+        const open = config.admissionMode === "open";
+        if (open) need(b.devicePublicKey, 422, "DEVICE_KEY_REQUIRED");
         const participant = id("p"),
           secret = token(),
           csrf = token();
         const p = await one(
           db,
-          "INSERT INTO participants(id,event_id) VALUES($1,$2) RETURNING *",
-          [participant, b.eventId],
+          "INSERT INTO participants(id,event_id,admission_status,device_public_key,device_key_version) VALUES($1,$2,$3,$4,$5) RETURNING *",
+          [participant, eventId, open ? "active" : "onboarding", open ? b.devicePublicKey : null, open ? 1 : 0],
         );
         await db.query(
           "INSERT INTO sessions(token_hash,participant_id,csrf_token,expires_at) VALUES($1,$2,$3,now()+($4*interval '1 hour'))",

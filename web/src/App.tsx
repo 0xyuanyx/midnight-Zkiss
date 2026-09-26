@@ -30,7 +30,7 @@ function PreviewIndex() {
     <h1>화면 미리보기</h1>
     <p>Figma의 지정 화면과 상태를 하나씩 확인할 수 있어요.<br />이곳의 프로필·매칭·SNS 동의는 예시 데이터입니다.</p>
     <ol>{screens.map(screen => <li key={screen.id}><Link to={`/preview/${screen.id}`}><strong>{screen.label}</strong><span>{screen.node ?? '추후 구현'} <span aria-hidden="true">↗</span></span></Link></li>)}</ol>
-    <p>프로필 수정은 제외했습니다. 피드에서 서로 호감을 보내면 대화로 연결됩니다.<br />사진은 서버에 보내거나 저장하지 않으며, 실제 AI·채팅·SNS 서비스는 연결되어 있지 않습니다.</p>
+    <p>프로필 수정은 제외했습니다. 피드에서 서로 호감을 보내면 대화로 연결됩니다.<br />미리보기에서는 사진을 서버에 보내지 않고 예시 상태만 사용합니다.</p>
     <Link className="button button--dark" to="/">행사 입장부터 체험하기 →</Link>
   </main>;
 }

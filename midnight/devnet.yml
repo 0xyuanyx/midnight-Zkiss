@@ -1,0 +1,53 @@
+# Copy of the root devnet.yml under a separate compose project so Codex backend work cannot tear it down.
+# Local Devnet — ledger 8 계열. 이미지 버전은 midnightntwrk/example-counter(2026-06-02 커밋)의 standalone.yml과 같다.
+# 호스트 포트를 고정해 README 명령과 E2E 설정이 같은 주소를 쓰게 한다.
+# 폴더명이 한글이면 Compose가 프로젝트 이름을 만들지 못하므로 고정한다
+name: zkiss-midnight-claude
+
+services:
+  proof-server:
+    image: 'midnightntwrk/proof-server:8.0.3'
+    command: ['midnight-proof-server']
+    ports:
+      - '127.0.0.1:6300:6300'
+    environment:
+      RUST_BACKTRACE: 'full'
+    # healthcheck 없음: proof-server 이미지에 curl이 없어 example-counter의 curl 검사는 항상 unhealthy가 된다.
+    # 준비 여부는 호스트에서 `curl http://127.0.0.1:6300/version`으로 확인한다(첫 기동 시 공개 파라미터 다운로드로 수십 초 소요).
+
+  node:
+    image: 'midnightntwrk/midnight-node:0.22.3'
+    ports:
+      - '127.0.0.1:9944:9944'
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:9944/health']
+      interval: 2s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    environment:
+      CFG_PRESET: 'dev'
+      SIDECHAIN_BLOCK_BENEFICIARY: '04bcf7ad3be7a5c790460be82a713af570f22e0f801f6659ab8e84a52be6969e'
+
+  indexer:
+    image: 'midnightntwrk/indexer-standalone:4.0.0'
+    ports:
+      - '127.0.0.1:8088:8088'
+    environment:
+      RUST_LOG: 'indexer=info,chain_indexer=info,indexer_api=info,wallet_indexer=info,indexer_common=info,info'
+      APP__APPLICATION__NETWORK_ID: 'undeployed'
+      APP__INFRA__NODE__URL: 'ws://node:9944'
+      APP__INFRA__STORAGE__PASSWORD: 'indexer'
+      APP__INFRA__PUB_SUB__PASSWORD: 'indexer'
+      APP__INFRA__LEDGER_STATE_STORAGE__PASSWORD: 'indexer'
+      # example-counter/standalone.env.example의 개발용 값. 로컬 전용이며 비밀이 아니다
+      APP__INFRA__SECRET: '303132333435363738393031323334353637383930313233343536373839303132'
+    healthcheck:
+      test: ['CMD-SHELL', 'cat /var/run/indexer-standalone/running']
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    depends_on:
+      node:
+        condition: service_healthy

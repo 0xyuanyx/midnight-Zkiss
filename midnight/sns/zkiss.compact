@@ -1,0 +1,268 @@
+// SNS-only v1: no ticket issuance, admission, or eligibility verification.
+pragma language_version >= 0.23;
+
+import CompactStandardLibrary;
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export struct Room {
+  slotA: Bytes<32>;
+  slotB: Bytes<32>;
+  expiresAt: Uint<64>;
+  open: Boolean;
+}
+
+export struct Consent {
+  transcript: Bytes<32>;
+  slot: Uint<8>; // 0 = slotA, 1 = slotB
+  expiresAt: Uint<64>; // intent expiry this approval was bound to
+}
+
+export struct RevealTerms {
+  requestNonce: Bytes<32>;
+  expiresAt: Uint<64>;
+  keyCommitA: Bytes<32>;
+  keyCommitB: Bytes<32>;
+  contactCommitA: Bytes<32>;
+  contactCommitB: Bytes<32>;
+  policyVersion: Uint<32>;
+}
+
+export struct RoomSecrets {
+  recipientPk: Bytes<32>;
+  contact: Bytes<64>;
+  contactSalt: Bytes<32>;
+}
+
+export struct TranscriptPreimage {
+  domain: Bytes<32>;
+  contractAddress: Bytes<32>;
+  scope: Bytes<32>;
+  roomId: Bytes<32>;
+  slotA: Bytes<32>;
+  slotB: Bytes<32>;
+  terms: RevealTerms;
+}
+
+// ---------------------------------------------------------------------------
+// Ledger
+// ---------------------------------------------------------------------------
+
+export sealed ledger operator: Bytes<32>;
+
+export sealed ledger eventScope: Bytes<32>;
+
+export sealed ledger eventEnd: Uint<64>;
+
+
+
+
+
+export ledger rooms: Map<Bytes<32>, Room>; // roomId -> Room
+
+// Per-slot approvals live in separate maps, so A and B approving concurrently never
+// read/write the same ledger entry (security review M2). transcript -> roomId.
+export ledger approvedA: Map<Bytes<32>, Bytes<32>>;
+
+export ledger approvedB: Map<Bytes<32>, Bytes<32>>;
+
+// consentKey(bindingHash, caller's slot) -> Consent. Keying by the slot means another
+// prover cannot occupy someone else's bindingHash (security review H1).
+export ledger consents: Map<Bytes<32>, Consent>;
+
+// ---------------------------------------------------------------------------
+// Witnesses
+// ---------------------------------------------------------------------------
+
+witness operatorSecret(): Bytes<32>;
+
+witness participantSecret(): Bytes<32>;
+
+
+
+witness roomSecrets(roomId: Bytes<32>): RoomSecrets;
+
+// ---------------------------------------------------------------------------
+// Constructor
+// ---------------------------------------------------------------------------
+
+constructor(scope: Bytes<32>, end: Uint<64>) {
+  // Operator public key (hash of the secret) must be public so circuits can compare.
+  operator = disclose(operatorKey(operatorSecret()));
+  // Event scope / end are public deployment parameters.
+  eventScope = disclose(scope);
+  eventEnd = disclose(end);
+}
+
+// ---------------------------------------------------------------------------
+// Pure derivations (shared with TS)
+// ---------------------------------------------------------------------------
+
+export pure circuit operatorKey(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "zkiss:sns:v1:operator"), sk]);
+}
+
+
+
+
+
+
+
+export pure circuit slotOf(scope: Bytes<32>, roomId: Bytes<32>, s: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<4, Bytes<32>>>([pad(32, "zkiss:sns:v1:slot"), scope, roomId, s]);
+}
+
+export pure circuit recipientKeyCommit(pk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "zkiss:sns:v1:rk"), pk]);
+}
+
+export pure circuit contactCommit(contact: Bytes<64>, salt: Bytes<32>): Bytes<32> {
+  return persistentCommit<Bytes<64>>(contact, salt);
+}
+
+export pure circuit consentKey(bindingHash: Bytes<32>, slot: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<3, Bytes<32>>>([pad(32, "zkiss:sns:v1:consent"), bindingHash, slot]);
+}
+
+export pure circuit revealTranscript(
+                      contractAddress: Bytes<32>,
+                      scope: Bytes<32>,
+                      roomId: Bytes<32>,
+                      slotA: Bytes<32>,
+                      slotB: Bytes<32>,
+                      terms: RevealTerms
+                      ): Bytes<32> {
+  return persistentHash<TranscriptPreimage>(
+           TranscriptPreimage { domain: pad(32, "zkiss:sns:v1:reveal"),
+                                contractAddress: contractAddress,
+                                scope: scope,
+                                roomId: roomId,
+                                slotA: slotA,
+                                slotB: slotB,
+                                terms: terms }
+           );
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+circuit assertOperator(): [] {
+  assert(operatorKey(operatorSecret()) == operator, "not operator");
+}
+
+// Public args are disclosed where they are first used for ledger access; they are
+// public by protocol design (bindingHash binds the backend intent, roomId/terms are
+// the shared room request).
+
+
+// ---------------------------------------------------------------------------
+// Circuits
+// ---------------------------------------------------------------------------
+
+
+
+// M01: prove ownership of an issued ticket; publish nullifier + admittedLeaf.
+
+
+// The operator registers slots submitted by the authenticated conversation peers.
+export circuit openRoom(
+                 roomId: Bytes<32>,
+                 slotA: Bytes<32>,
+                 slotB: Bytes<32>,
+                 expiresAt: Uint<64>
+                 ): [] {
+  assertOperator();
+  // Room parameters are public by design (slots are per-room hashes).
+  const rid = disclose(roomId);
+  const a = disclose(slotA);
+  const b = disclose(slotB);
+  const exp = disclose(expiresAt);
+  assert(blockTimeLt(eventEnd), "event closed");
+  assert(blockTimeLt(exp), "room expired");
+  assert(a != b, "slots must differ");
+  assert(!rooms.member(rid), "room exists");
+  rooms.insert(rid, Room { slotA: a, slotB: b, expiresAt: exp, open: true });
+}
+
+// Only a slot owner can approve the exact SNS disclosure terms.
+export circuit approveReveal(
+                 bindingHash: Bytes<32>,
+                 expiresAt: Uint<64>,
+                 roomId: Bytes<32>,
+                 terms: RevealTerms
+                 ): [] {
+  // Public request parameters (PROTOCOL sections 3-5).
+  const bh = disclose(bindingHash);
+  const exp = disclose(expiresAt);
+  const rid = disclose(roomId);
+  const t = disclose(terms);
+
+  assert(blockTimeLt(eventEnd), "event closed");
+  // The intent expiry is enforced on chain.
+  assert(blockTimeLt(exp), "intent expired");
+  assert(blockTimeLt(t.expiresAt), "terms expired");
+  assert(rooms.member(rid), "unknown room");
+  const room = rooms.lookup(rid);
+  assert(room.open, "room closed");
+  assert(blockTimeLt(room.expiresAt), "room expired");
+
+  // Slot ownership: my slot for this room derives from my device secret.
+  const s = participantSecret();
+  const mySlot = slotOf(eventScope, rid, s);
+  // Disclosing WHICH slot index approved is acceptable (PROTOCOL section 5); the slot
+  // values themselves are already public in `rooms`.
+  const isA = disclose(mySlot == room.slotA);
+  assert(isA || mySlot == room.slotB, "not a room member");
+
+  // Openings of MY slot's key and contact commitments (private inputs).
+  const sec = roomSecrets(rid);
+  const myKeyCommit = isA ? t.keyCommitA : t.keyCommitB;
+  const myContactCommit = isA ? t.contactCommitA : t.contactCommitB;
+  assert(recipientKeyCommit(sec.recipientPk) == myKeyCommit, "key commit mismatch");
+  assert(contactCommit(sec.contact, sec.contactSalt) == myContactCommit, "contact commit mismatch");
+
+  // Transcript bound to this contract, deployment scope, room, slots and terms.
+  const tr = revealTranscript(kernel.self().bytes, eventScope, rid, room.slotA, room.slotB, t);
+  if (isA) {
+    assert(!approvedA.member(tr), "already approved");
+    approvedA.insert(tr, rid);
+  } else {
+    assert(!approvedB.member(tr), "already approved");
+    approvedB.insert(tr, rid);
+  }
+  // Keyed by the caller's slot value (already public in `rooms`): only that slot's owner
+  // can write this key, so nobody can pre-empt another party's bindingHash.
+  const ck = consentKey(bh, isA ? room.slotA : room.slotB);
+  assert(!consents.member(ck), "bindingHash already used");
+  consents.insert(ck, Consent { transcript: tr, slot: (isA ? 0 : 1) as Uint<8>, expiresAt: exp });
+}
+
+// M04: operator closes a room.
+export circuit closeRoom(roomId: Bytes<32>): [] {
+  assertOperator();
+  const rid = disclose(roomId);
+  assert(rooms.member(rid), "unknown room");
+  const room = rooms.lookup(rid);
+  rooms.insert(
+    rid,
+    Room { slotA: room.slotA, slotB: room.slotB, expiresAt: room.expiresAt, open: false }
+    );
+}
+
+// M04: either slot owner closes the room (withdraws consent for future delivery).
+export circuit leaveRoom(roomId: Bytes<32>): [] {
+  const rid = disclose(roomId);
+  assert(rooms.member(rid), "unknown room");
+  const room = rooms.lookup(rid);
+  assert(room.open, "room closed");
+  const mySlot = slotOf(eventScope, rid, participantSecret());
+  // Constraint only: which slot left is not disclosed.
+  assert(mySlot == room.slotA || mySlot == room.slotB, "not a room member");
+  rooms.insert(
+    rid,
+    Room { slotA: room.slotA, slotB: room.slotB, expiresAt: room.expiresAt, open: false }
+    );
+}

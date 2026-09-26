@@ -1,0 +1,368 @@
+// ZKiss Midnight protocol v1 (zkiss-midnight-v1) -- one contract per event.
+// Spec: midnight/PROTOCOL.md sections 2-3 (authoritative).
+//
+// Toolchain: Compact 0.31.1 (`compact compile +0.31.1`), compact-runtime 0.16.0.
+//
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+// constructor(scope: Bytes<32>, end: Uint<64>)
+//   operator = H("zkiss:v1:operator", operatorSecret()); eventScope = scope; eventEnd = end.
+//
+// Impure circuits (transactions):
+//   issueTicket(leaf: Bytes<32>)                                    operator only
+//   admit(bindingHash: Bytes<32>, expiresAt: Uint<64>)              M01, ticket holder
+//   openRoom(roomId, slotA, slotB: Bytes<32>, expiresAt: Uint<64>)  M02, operator only
+//   approveReveal(bindingHash, expiresAt: Uint<64>, roomId, terms: RevealTerms)  M03, slot owner
+//   closeRoom(roomId: Bytes<32>)                                    M04, operator only
+//   leaveRoom(roomId: Bytes<32>)                                    M04, slot owner
+//
+// Pure circuits (exported to TS as `pureCircuits.*`):
+//   operatorKey(sk)                      = H("zkiss:v1:operator", sk)
+//   ticketLeaf(s)                        = H("zkiss:v1:ticket", s)
+//   nullifierOf(scope, s)                = H("zkiss:v1:nullifier", scope, s)
+//   admittedLeafOf(scope, s)             = H("zkiss:v1:admitted", scope, s)
+//   slotOf(scope, roomId, s)             = H("zkiss:v1:slot", scope, roomId, s)
+//   recipientKeyCommit(pk)               = H("zkiss:v1:rk", pk)
+//   contactCommit(contact: Bytes<64>, salt) = persistentCommit<Bytes<64>>(contact, salt)
+//   revealTranscript(contractAddress: Bytes<32>, scope, roomId, slotA, slotB, terms: RevealTerms)
+//       = persistentHash<TranscriptPreimage>({ pad(32,"zkiss:v1:reveal"), contractAddress,
+//                                              scope, roomId, slotA, slotB, terms })
+//     approveReveal computes exactly this with contractAddress = kernel.self().bytes
+//     (TS: encodeContractAddress(deployedAddressHex)).
+//   H(d, x...) = persistentHash<Vector<n, Bytes<32>>>([pad(32, d), x...]).
+//
+// Witnesses:
+//   operatorSecret(): Bytes<32>
+//   ticketSecret(): Bytes<32>
+//   ticketPath(leaf): MerkleTreePath<12, Bytes<32>>    path in `tickets`
+//   admittedPath(leaf): MerkleTreePath<12, Bytes<32>>  path in `admitted`
+//   roomSecrets(roomId): RoomSecrets { recipientPk, contact: Bytes<64>, contactSalt }
+//
+// Tree depth 12 (4096 leaves per event). Proof cost of a path check grows linearly
+// with depth (one hash per level); 12 levels covers a festival-sized event.
+//
+// Privacy notes:
+//   * approveReveal / leaveRoom never touch `nullifiers`, never disclose the ticket
+//     secret, the admittedLeaf or the nullifier. approveReveal discloses only:
+//     bindingHash, roomId, terms (public inputs by design), the `admitted` root the
+//     path was proved against, and which slot index (A/B) approved.
+//   * leaveRoom discloses only roomId (and that the caller owns one of its slots).
+//   * Assert messages never contain secret-derived values.
+pragma language_version >= 0.23;
+
+import CompactStandardLibrary;
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export struct Room {
+  slotA: Bytes<32>;
+  slotB: Bytes<32>;
+  expiresAt: Uint<64>;
+  open: Boolean;
+}
+
+export struct Consent {
+  transcript: Bytes<32>;
+  slot: Uint<8>; // 0 = slotA, 1 = slotB
+  expiresAt: Uint<64>; // intent expiry this approval was bound to
+}
+
+export struct RevealTerms {
+  requestNonce: Bytes<32>;
+  expiresAt: Uint<64>;
+  keyCommitA: Bytes<32>;
+  keyCommitB: Bytes<32>;
+  contactCommitA: Bytes<32>;
+  contactCommitB: Bytes<32>;
+  policyVersion: Uint<32>;
+}
+
+export struct RoomSecrets {
+  recipientPk: Bytes<32>;
+  contact: Bytes<64>;
+  contactSalt: Bytes<32>;
+}
+
+export struct TranscriptPreimage {
+  domain: Bytes<32>;
+  contractAddress: Bytes<32>;
+  scope: Bytes<32>;
+  roomId: Bytes<32>;
+  slotA: Bytes<32>;
+  slotB: Bytes<32>;
+  terms: RevealTerms;
+}
+
+// ---------------------------------------------------------------------------
+// Ledger
+// ---------------------------------------------------------------------------
+
+export sealed ledger operator: Bytes<32>;
+
+export sealed ledger eventScope: Bytes<32>;
+
+export sealed ledger eventEnd: Uint<64>;
+
+export ledger tickets: HistoricMerkleTree<12, Bytes<32>>;
+
+export ledger admitted: HistoricMerkleTree<12, Bytes<32>>;
+
+export ledger nullifiers: Set<Bytes<32>>;
+
+export ledger admissions: Map<Bytes<32>, Uint<64>>; // bindingHash -> expiresAt
+
+export ledger rooms: Map<Bytes<32>, Room>; // roomId -> Room
+
+// Per-slot approvals live in separate maps, so A and B approving concurrently never
+// read/write the same ledger entry (security review M2). transcript -> roomId.
+export ledger approvedA: Map<Bytes<32>, Bytes<32>>;
+
+export ledger approvedB: Map<Bytes<32>, Bytes<32>>;
+
+// consentKey(bindingHash, caller's slot) -> Consent. Keying by the slot means another
+// prover cannot occupy someone else's bindingHash (security review H1).
+export ledger consents: Map<Bytes<32>, Consent>;
+
+// ---------------------------------------------------------------------------
+// Witnesses
+// ---------------------------------------------------------------------------
+
+witness operatorSecret(): Bytes<32>;
+
+witness ticketSecret(): Bytes<32>;
+
+witness ticketPath(leaf: Bytes<32>): MerkleTreePath<12, Bytes<32>>;
+
+witness admittedPath(leaf: Bytes<32>): MerkleTreePath<12, Bytes<32>>;
+
+witness roomSecrets(roomId: Bytes<32>): RoomSecrets;
+
+// ---------------------------------------------------------------------------
+// Constructor
+// ---------------------------------------------------------------------------
+
+constructor(scope: Bytes<32>, end: Uint<64>) {
+  // Operator public key (hash of the secret) must be public so circuits can compare.
+  operator = disclose(operatorKey(operatorSecret()));
+  // Event scope / end are public deployment parameters.
+  eventScope = disclose(scope);
+  eventEnd = disclose(end);
+}
+
+// ---------------------------------------------------------------------------
+// Pure derivations (shared with TS)
+// ---------------------------------------------------------------------------
+
+export pure circuit operatorKey(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "zkiss:v1:operator"), sk]);
+}
+
+export pure circuit ticketLeaf(s: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "zkiss:v1:ticket"), s]);
+}
+
+export pure circuit nullifierOf(scope: Bytes<32>, s: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<3, Bytes<32>>>([pad(32, "zkiss:v1:nullifier"), scope, s]);
+}
+
+export pure circuit admittedLeafOf(scope: Bytes<32>, s: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<3, Bytes<32>>>([pad(32, "zkiss:v1:admitted"), scope, s]);
+}
+
+export pure circuit slotOf(scope: Bytes<32>, roomId: Bytes<32>, s: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<4, Bytes<32>>>([pad(32, "zkiss:v1:slot"), scope, roomId, s]);
+}
+
+export pure circuit recipientKeyCommit(pk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "zkiss:v1:rk"), pk]);
+}
+
+export pure circuit contactCommit(contact: Bytes<64>, salt: Bytes<32>): Bytes<32> {
+  return persistentCommit<Bytes<64>>(contact, salt);
+}
+
+export pure circuit consentKey(bindingHash: Bytes<32>, slot: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<3, Bytes<32>>>([pad(32, "zkiss:v1:consent"), bindingHash, slot]);
+}
+
+export pure circuit revealTranscript(
+                      contractAddress: Bytes<32>,
+                      scope: Bytes<32>,
+                      roomId: Bytes<32>,
+                      slotA: Bytes<32>,
+                      slotB: Bytes<32>,
+                      terms: RevealTerms
+                      ): Bytes<32> {
+  return persistentHash<TranscriptPreimage>(
+           TranscriptPreimage { domain: pad(32, "zkiss:v1:reveal"),
+                                contractAddress: contractAddress,
+                                scope: scope,
+                                roomId: roomId,
+                                slotA: slotA,
+                                slotB: slotB,
+                                terms: terms }
+           );
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+circuit assertOperator(): [] {
+  assert(operatorKey(operatorSecret()) == operator, "not operator");
+}
+
+// Public args are disclosed where they are first used for ledger access; they are
+// public by protocol design (bindingHash binds the backend intent, roomId/terms are
+// the shared room request).
+circuit assertBindingUnused(bh: Bytes<32>): [] {
+  assert(!admissions.member(bh), "bindingHash already used");
+}
+
+// ---------------------------------------------------------------------------
+// Circuits
+// ---------------------------------------------------------------------------
+
+export circuit issueTicket(leaf: Bytes<32>): [] {
+  assertOperator();
+  assert(blockTimeLt(eventEnd), "event closed");
+  // Ticket leaves are public by design (PROTOCOL section 2).
+  tickets.insert(disclose(leaf));
+}
+
+// M01: prove ownership of an issued ticket; publish nullifier + admittedLeaf.
+export circuit admit(bindingHash: Bytes<32>, expiresAt: Uint<64>): [] {
+  // bindingHash / expiresAt are public intent parameters (PROTOCOL section 4).
+  const bh = disclose(bindingHash);
+  const exp = disclose(expiresAt);
+  assert(blockTimeLt(eventEnd), "event closed");
+  assert(blockTimeLt(exp), "intent expired");
+  assertBindingUnused(bh);
+
+  const s = ticketSecret();
+  const leaf = ticketLeaf(s);
+  const path = ticketPath(leaf);
+  assert(path.leaf == leaf, "invalid ticket path");
+  // Only the tree root is disclosed; which leaf is proven stays hidden.
+  // HistoricMerkleTree accepts any past root, so slightly stale paths still verify.
+  assert(tickets.checkRoot(disclose(merkleTreePathRoot<12, Bytes<32>>(path))), "ticket not issued");
+
+  // The nullifier is disclosed at admission by design (one admission per ticket).
+  const nf = disclose(nullifierOf(eventScope, s));
+  assert(!nullifiers.member(nf), "ticket already admitted");
+  nullifiers.insert(nf);
+  // admittedLeaf is inserted publicly at admission by design (PROTOCOL section 2);
+  // later circuits only prove membership against its root.
+  admitted.insert(disclose(admittedLeafOf(eventScope, s)));
+  admissions.insert(bh, exp);
+}
+
+// M02: operator registers two anonymous slots for a room.
+export circuit openRoom(
+                 roomId: Bytes<32>,
+                 slotA: Bytes<32>,
+                 slotB: Bytes<32>,
+                 expiresAt: Uint<64>
+                 ): [] {
+  assertOperator();
+  // Room parameters are public by design (slots are per-room hashes).
+  const rid = disclose(roomId);
+  const a = disclose(slotA);
+  const b = disclose(slotB);
+  const exp = disclose(expiresAt);
+  assert(blockTimeLt(eventEnd), "event closed");
+  assert(blockTimeLt(exp), "room expired");
+  assert(a != b, "slots must differ");
+  assert(!rooms.member(rid), "room exists");
+  rooms.insert(rid, Room { slotA: a, slotB: b, expiresAt: exp, open: true });
+}
+
+// M03: slot owner approves reveal under specific terms.
+export circuit approveReveal(
+                 bindingHash: Bytes<32>,
+                 expiresAt: Uint<64>,
+                 roomId: Bytes<32>,
+                 terms: RevealTerms
+                 ): [] {
+  // Public request parameters (PROTOCOL sections 3-5).
+  const bh = disclose(bindingHash);
+  const exp = disclose(expiresAt);
+  const rid = disclose(roomId);
+  const t = disclose(terms);
+
+  assert(blockTimeLt(eventEnd), "event closed");
+  // The intent expiry is enforced on chain, as in admit (security review L1).
+  assert(blockTimeLt(exp), "intent expired");
+  assert(blockTimeLt(t.expiresAt), "terms expired");
+  assert(rooms.member(rid), "unknown room");
+  const room = rooms.lookup(rid);
+  assert(room.open, "room closed");
+  assert(blockTimeLt(room.expiresAt), "room expired");
+
+  // Slot ownership: my slot for this room derives from my ticket secret.
+  const s = ticketSecret();
+  const mySlot = slotOf(eventScope, rid, s);
+  // Disclosing WHICH slot index approved is acceptable (PROTOCOL section 5); the slot
+  // values themselves are already public in `rooms`.
+  const isA = disclose(mySlot == room.slotA);
+  assert(isA || mySlot == room.slotB, "not a room member");
+
+  // Admission: my admittedLeaf is in `admitted`. Only the root is disclosed; the
+  // leaf itself (and the nullifier) are never disclosed in this circuit.
+  const aLeaf = admittedLeafOf(eventScope, s);
+  const aPath = admittedPath(aLeaf);
+  assert(aPath.leaf == aLeaf, "invalid admission path");
+  assert(admitted.checkRoot(disclose(merkleTreePathRoot<12, Bytes<32>>(aPath))), "not admitted");
+
+  // Openings of MY slot's key and contact commitments (private inputs).
+  const sec = roomSecrets(rid);
+  const myKeyCommit = isA ? t.keyCommitA : t.keyCommitB;
+  const myContactCommit = isA ? t.contactCommitA : t.contactCommitB;
+  assert(recipientKeyCommit(sec.recipientPk) == myKeyCommit, "key commit mismatch");
+  assert(contactCommit(sec.contact, sec.contactSalt) == myContactCommit, "contact commit mismatch");
+
+  // Transcript bound to this contract, event, room, slots and terms.
+  const tr = revealTranscript(kernel.self().bytes, eventScope, rid, room.slotA, room.slotB, t);
+  if (isA) {
+    assert(!approvedA.member(tr), "already approved");
+    approvedA.insert(tr, rid);
+  } else {
+    assert(!approvedB.member(tr), "already approved");
+    approvedB.insert(tr, rid);
+  }
+  // Keyed by the caller's slot value (already public in `rooms`): only that slot's owner
+  // can write this key, so nobody can pre-empt another party's bindingHash.
+  const ck = consentKey(bh, isA ? room.slotA : room.slotB);
+  assert(!consents.member(ck), "bindingHash already used");
+  consents.insert(ck, Consent { transcript: tr, slot: (isA ? 0 : 1) as Uint<8>, expiresAt: exp });
+}
+
+// M04: operator closes a room.
+export circuit closeRoom(roomId: Bytes<32>): [] {
+  assertOperator();
+  const rid = disclose(roomId);
+  assert(rooms.member(rid), "unknown room");
+  const room = rooms.lookup(rid);
+  rooms.insert(
+    rid,
+    Room { slotA: room.slotA, slotB: room.slotB, expiresAt: room.expiresAt, open: false }
+    );
+}
+
+// M04: either slot owner closes the room (withdraws consent for future delivery).
+export circuit leaveRoom(roomId: Bytes<32>): [] {
+  const rid = disclose(roomId);
+  assert(rooms.member(rid), "unknown room");
+  const room = rooms.lookup(rid);
+  assert(room.open, "room closed");
+  const mySlot = slotOf(eventScope, rid, ticketSecret());
+  // Constraint only: which slot left is not disclosed.
+  assert(mySlot == room.slotA || mySlot == room.slotB, "not a room member");
+  rooms.insert(
+    rid,
+    Room { slotA: room.slotA, slotB: room.slotB, expiresAt: room.expiresAt, open: false }
+    );
+}

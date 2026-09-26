@@ -1,3 +1,4 @@
+import { ensureDefaultEvent } from './default-event.js';
 import { runtime } from "./runtime.js";
 import { loadProviders } from "./providers.js";
 import { buildApp } from "./app.js";
@@ -5,6 +6,7 @@ import { registerWeb } from "./web-serving.js";
 const { config, pool } = runtime();
 try {
   await pool.query("SELECT version FROM migrations LIMIT 1");
+  await ensureDefaultEvent(pool, config);
   const app = await buildApp({
     pool,
     config,

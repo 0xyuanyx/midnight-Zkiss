@@ -13,10 +13,11 @@ export async function loadProviders(config: Config) {
   const midnight: MidnightAdapter | undefined = config.midnightAdapterModule
     ? await load(config.midnightAdapterModule)
     : undefined;
+  if (config.geminiApiKey && !config.aiProviderModule && !config.geminiImageModel) throw new Error("GEMINI_IMAGE_CONFIG_REQUIRED");
   const ai: AiProvider | undefined = config.aiProviderModule
     ? await load(config.aiProviderModule)
     : config.geminiApiKey
-      ? createGeminiProvider(config.geminiApiKey, config.geminiModel ?? "")
+      ? createGeminiProvider(config.geminiApiKey, config.geminiModel ?? "", fetch, config.geminiImageModel)
       : undefined;
   if (
     midnight &&

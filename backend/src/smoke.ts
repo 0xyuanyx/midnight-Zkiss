@@ -2,7 +2,7 @@
 import sharp from "sharp";
 import { randomUUID, randomBytes } from "node:crypto";
 const base = process.env.SMOKE_BASE_URL ?? "http://127.0.0.1:3001";
-const event = process.env.SMOKE_EVENT_ID ?? "evt_demo";
+const event = process.env.SMOKE_EVENT_ID ?? "evt_mvp";
 const E = `/events/${event}`;
 type User = { cookie: string; csrf: string; id: string };
 async function request(path: string, method = "GET", body?: unknown, u?: User) {
@@ -31,7 +31,7 @@ async function request(path: string, method = "GET", body?: unknown, u?: User) {
 try {
   if ((await request(E)).data.mode !== "demo") throw new Error("DEMO_ONLY");
   const onboard = async (name: string) => {
-    const s = await request("/sessions", "POST", { eventId: event });
+    const s = await request("/sessions", "POST", { eventId: event, devicePublicKey: Buffer.alloc(32, 1).toString("base64") });
     const u = {
       id: s.data.participantId,
       cookie: s.cookie,
@@ -73,6 +73,7 @@ try {
         .data;
     }
     if (ai.status !== "succeeded") throw new Error("AI_FAILED");
+    if (s.data.admissionStatus !== 'active') {
     await request(
       E + "/midnight/ticket",
       "POST",
@@ -109,6 +110,7 @@ try {
       { outcome: "succeeded" },
       u,
     );
+    }
     await request(
       E + "/me/profile/publication",
       "POST",

@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 test('피드의 인상 카드, 필터, 일방 호감과 전송 알림', async ({ page }) => {
-  await page.goto('/home');
+  await page.goto('/preview/home');
   await expect(page.getByRole('button', { name: /DM/ })).toHaveCount(0);
   await expect(page.locator('.feed-profile')).toHaveCount(2);
   await expect(page.getByLabel('AI 인상 분석', { exact: true })).toHaveCount(2);
@@ -26,7 +26,7 @@ test('피드의 인상 카드, 필터, 일방 호감과 전송 알림', async ({
 });
 
 test('받은 호감에 답해야 해당 상대의 대화만 열린다', async ({ page }) => {
-  await page.goto('/likes');
+  await page.goto('/preview/likes');
   await expect(page.getByRole('tab', { name: '받은 호감 1' })).toHaveAttribute('aria-selected', 'true');
   await page.getByRole('button', { name: '♡ 호감 보내기 · 모카' }).click();
   await expect(page.getByRole('dialog')).toContainText('서로의 호감이 닿았어요!');
