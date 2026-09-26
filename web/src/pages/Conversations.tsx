@@ -73,7 +73,25 @@ function SharedPanel({ peerId }: { peerId: string }) {
   const [notice, setNotice] = useState('');
   // The visibility gate is enforced here as well as at the route boundary.
   if (!canReveal(consent) || (live && (reveal?.status !== 'released' || !reveal.peerContact))) return null;
-  if (live) return <section className="shared-panel" aria-label="SNS 상호 공개 완료"><span className="success-check" aria-hidden="true">✓</span><h2>서로 동의했어요</h2><p>두 사람의 승인을 확인하고 SNS를 복호화했어요.</p><div className="revealed-contact"><strong>{partner.name}님의 SNS</strong><p>{reveal!.peerContact}</p><Button onClick={() => { void navigator.clipboard.writeText(reveal!.peerContact!).then(() => setNotice('SNS 아이디를 복사했어요.')).catch(() => setNotice('아이디를 길게 눌러 복사해 주세요.')); }}>아이디 복사하기</Button></div>{notice && <p role="status">{notice}</p>}</section>;
+  if (live) {
+    // Same layout as the original completion screen; the partner card carries the decrypted ID.
+    const contact = reveal!.peerContact!;
+    const copy = () => { void navigator.clipboard.writeText(contact).then(() => setNotice('SNS 아이디를 복사했어요.')).catch(() => setNotice('아이디를 길게 눌러 복사해 주세요.')); };
+    return <section className="shared-panel" aria-label="SNS 상호 공개 완료">
+      <span className="success-check" aria-hidden="true">✓</span>
+      <h2>서로 동의했어요</h2>
+      <p>두 사람의 SNS가 공개됐어요.<br />행사가 끝난 뒤에도 대화를 이어가 보세요.</p>
+      <div className="social-cards">
+        <button className="social-card" onClick={copy} aria-label={`${partner.name}님의 SNS ${contact} 복사하기`}>
+          <Avatar name={partner.name} image={partner.image} /><span>{partner.name}<br /><span className="social-handle">{contact}</span></span>
+        </button>
+        <div className="social-card">
+          <Avatar name={profile.nickname} image={ownImpression.image} pink /><span>{profile.nickname}<br />내 SNS 공개됨</span>
+        </div>
+      </div>
+      {notice && <p className="social-notice" role="status">{notice}</p>}
+    </section>;
+  }
   return <section className="shared-panel" aria-label="SNS 상호 공개 완료">
     <span className="success-check" aria-hidden="true">✓</span>
     <h2>서로 동의했어요</h2>

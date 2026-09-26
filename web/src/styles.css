@@ -111,6 +111,7 @@
   .photo-picker { display: flex; position: relative; width: 100%; height: 139px; align-items: center; justify-content: center; border: 1px dashed #d9d9d4; border-radius: 19px; background: #fafaf7; cursor: pointer; color: var(--muted); font-weight: 700; font-size: 11px; }
   .photo-picker--ready { background: linear-gradient(159deg, #d6c7ff 14.286%, #ffd1de 85.714%); border: 1px solid transparent; color: var(--ink); }
   .photo-picker:focus-visible { outline: 3px solid var(--violet); outline-offset: 3px; }
+  .photo-picker:has(input:focus-visible) { outline: 3px solid var(--violet); outline-offset: 3px; }
   .photo-help { margin-top: 12px; margin-bottom: 12px; color: #a1a1a1; font-size: 9px; line-height: 1.35; }
   .field-error { margin: -5px 0 14px; font-size: 11px; line-height: 1.5; color: #b02349; }
   .photo-field .field-error { margin: 8px 0 0; }
@@ -204,6 +205,7 @@
   .social-card { border: none; background: #fff; border-radius: 14px; display: flex; align-items: center; justify-content: center; gap: 17px; min-height: 61px; padding: 8px; }
   .social-card .avatar { width: 39px; height: 39px; border-radius: 12px; font-size: 13px; }
   .social-card > span:last-child { font-size: 10px; line-height: 1.35; }
+  .social-card .social-handle { font-weight: 700; overflow-wrap: anywhere; }
   .shared-panel .social-notice { padding-top: 8px; color: #5745a3; }
   .preview-index { max-width: 640px; margin: 0 auto; padding: 40px 24px; }
   .preview-index h1 { margin-top: 32px; }
@@ -331,8 +333,6 @@
 .contact-settings label { font-weight: 600; }
 .contact-settings input { width: 100%; min-width: 0; box-sizing: border-box; padding: 13px; border: 1px solid #d8d4d4; border-radius: 10px; font: inherit; }
 .contact-settings p { margin: 0; font-size: 13px; line-height: 1.6; color: #666; }
-.revealed-contact { margin-top: 20px; overflow-wrap: anywhere; }
-.revealed-contact > p { font-size: 20px; font-weight: 600; }
 .device-data-note { border-top: 1px solid var(--line, #e6e3e3); padding-top: 12px; color: #666; font-size: 12px; line-height: 1.55; }
 .device-data-note summary { cursor: pointer; color: var(--dark, #101114); font-weight: 700; }
 .device-data-note p { margin-top: 8px; }

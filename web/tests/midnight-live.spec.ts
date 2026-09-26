@@ -10,6 +10,9 @@ async function onboard(page:Page,name:string,contact:string) {
   await page.getByRole('textbox',{name:'나이'}).fill('24');
   await page.getByRole('combobox',{name:'성별'}).selectOption('여성');
   await page.getByRole('button',{name:'다음'}).click();
+  await page.getByRole('textbox',{name:'MBTI'}).fill('ENFP');
+  await page.getByRole('textbox',{name:'SNS ID'}).fill(contact);
+  await page.getByRole('textbox',{name:'간단한 자기소개'}).fill('전시와 음악을 좋아해요.');
   await page.getByLabel('AI 인상 분석용 사진').setInputFiles({name:'synthetic.png',mimeType:'image/png',buffer:photo});
   await page.getByRole('button',{name:'AI 프로필 만들기'}).click();
   await expect(page.getByRole('heading',{name:'상대방에게 보일 내 프로필'})).toBeVisible({timeout:120000});
@@ -18,9 +21,8 @@ async function onboard(page:Page,name:string,contact:string) {
   await expect(home.or(page.locator('.api-error'))).toBeVisible({timeout:900000});
   if(await page.locator('.api-error').isVisible()) throw Error(await page.locator('.api-error').innerText());
   await expect(home).toBeVisible();
+  // The SNS ID entered with the profile is encrypted on this device after admission.
   await page.goto(target!+'/me');
-  await page.getByRole('textbox',{name:'공개할 SNS 아이디'}).fill(contact);
-  await page.getByRole('button',{name:'SNS 저장하기'}).click();
   await expect(page.getByRole('status').filter({hasText:'암호화된 SNS가 저장되어 있어요.'})).toBeVisible({timeout:30000});
 }
 test('two browsers prove admission and bilateral SNS approval, decrypt and restore',async({browser},testInfo)=>{

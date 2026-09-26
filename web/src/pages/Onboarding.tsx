@@ -31,11 +31,12 @@ export function ProfilePage() {
   const [formStep, setFormStep] = useState<1 | 2>(() => searchParams.get('step') === '2' ? 2 : 1);
   const nicknameValid = profile.nickname.trim().length >= 1 && profile.nickname.trim().length <= 12;
   const ageValid = /^\d{1,3}$/.test(profile.age) && Number(profile.age) >= 18 && Number(profile.age) <= 100;
-  const mbtiValid = /^[A-Za-z]{4}$/.test(profile.mbti.trim());
+  // The live API accepts only real MBTI letters; the demo keeps its original 4-letter rule.
+  const mbtiValid = (live ? /^[IE][NS][FT][JP]$/ : /^[A-Za-z]{4}$/).test(profile.mbti.trim());
   const snsIdValid = profile.snsId.trim().length >= 1 && profile.snsId.trim().length <= 30;
   const introductionValid = profile.introduction.trim().length >= 1 && profile.introduction.trim().length <= 20;
   const basicReady = nicknameValid && ageValid && Boolean(profile.gender);
-  const ready = basicReady && (live ? (!profile.mbti || /^[IE][NS][FT][JP]$/.test(profile.mbti)) : mbtiValid && snsIdValid && introductionValid) && profile.photoReady && !busy;
+  const ready = basicReady && mbtiValid && snsIdValid && introductionValid && profile.photoReady && !busy;
 
   function markPhotoReady() {
     setProfile(current => ({ ...current, photoReady: true }));
@@ -82,10 +83,10 @@ export function ProfilePage() {
           <Button disabled={!basicReady} type="submit">다음</Button>
         </> : <>
           <label className="field">MBTI
-            <input autoComplete="off" value={profile.mbti} onChange={e => setProfile(current => ({ ...current, mbti: e.target.value.toUpperCase() }))} placeholder="예: ENFP" maxLength={4} pattern="[A-Za-z]{4}" aria-describedby={profile.mbti && !mbtiValid ? 'mbti-hint' : undefined} required={!live} />
+            <input autoComplete="off" value={profile.mbti} onChange={e => setProfile(current => ({ ...current, mbti: e.target.value.toUpperCase() }))} placeholder="예: ENFP" maxLength={4} pattern="[A-Za-z]{4}" aria-describedby={profile.mbti && !mbtiValid ? 'mbti-hint' : undefined} required />
           </label>
           {profile.mbti && !mbtiValid && <p id="mbti-hint" className="field-error">MBTI 4글자를 입력해 주세요.</p>}
-          {!live && <><label className="field">SNS ID
+          <label className="field">SNS ID
             <input autoComplete="off" value={profile.snsId} onChange={e => setProfile(current => ({ ...current, snsId: e.target.value }))} placeholder="예: @zkiss" maxLength={30} required />
           </label>
           <p className="sns-privacy-notice" role="note"><strong>🔒 SNS ID는 상호 공개 전까지 비공개예요.</strong><br />상대방은 물론 관리자도 확인할 수 없어요.</p>
@@ -94,10 +95,12 @@ export function ProfilePage() {
             <textarea id="introduction" value={profile.introduction} onChange={e => setProfile(current => ({ ...current, introduction: e.target.value }))} placeholder="예: 전시와 음악을 좋아해요." maxLength={20} aria-describedby="introduction-count" required />
             <span id="introduction-count" className="character-count">{profile.introduction.length}/20</span>
           </div>
-          </>}
           <div className="photo-field">
             <span className="field-label">AI 인상 분석용 사진</span>
-            {live ? <input aria-label="AI 인상 분석용 사진" className="photo-picker" type="file" accept="image/jpeg,image/png,image/webp" onChange={e => setPhoto?.(e.target.files?.[0] ?? null)} /> : <button className={`photo-picker ${profile.photoReady ? 'photo-picker--ready' : ''}`} type="button" onClick={markPhotoReady} aria-describedby="photo-help">
+            {live ? <label className={`photo-picker ${profile.photoReady ? 'photo-picker--ready' : ''}`} aria-describedby="photo-help">
+              <input aria-label="AI 인상 분석용 사진" className="sr-only" type="file" accept="image/jpeg,image/png,image/webp" onChange={e => setPhoto?.(e.target.files?.[0] ?? null)} />
+              <span aria-live="polite">{profile.photoReady ? '사진이 준비되었어요!' : '사진 한 장 추가하기'}</span>
+            </label> : <button className={`photo-picker ${profile.photoReady ? 'photo-picker--ready' : ''}`} type="button" onClick={markPhotoReady} aria-describedby="photo-help">
               <span aria-live="polite">{profile.photoReady ? '사진이 준비되었어요!' : '사진 한 장 추가하기'}</span>
             </button>}
             <p id="photo-help" className="photo-help">{live ? '사진은 Google Gemini로 전송해 분석합니다. 우리 서버는 처리 후 사진을 삭제하며, Google의 보관 정책이 별도로 적용됩니다. 피드에는 원본 사진을 공개하지 않습니다.' : <>사진은 AI 분석 후 즉시 삭제되며 보관되지 않아요.<br />피드에는 원본 사진이 나타나지 않아요.</>}</p>

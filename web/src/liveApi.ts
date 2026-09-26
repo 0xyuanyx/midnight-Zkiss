@@ -30,8 +30,8 @@ export async function restoreSession(): Promise<LiveMe | null> {
   try { const me = await api<LiveMe>('/me'); setCsrf(me.csrfToken); return me; }
   catch (error) { if ((error as ApiError).status === 401) { setCsrf(); return null; } throw error; }
 }
-export type LiveMe = { mode?: string; contact?: { version: number; configured: boolean; commitment: string | null; keyVersion: number }; participantId: string; eventId: string; csrfToken: string; admissionStatus: string; profile: { version: number; status: string; intro?: string; nickname?: string; age?: number; gender?: string; mbti?: string }; ticket: { leaf: string | null; status: string | null } };
-export type PublicProfile = { id: string; nickname: string; age: number; intro: string; mbti: string | null; tags: string[] };
+export type LiveMe = { mode?: string; contact?: { version: number; configured: boolean; commitment: string | null; keyVersion: number }; participantId: string; eventId: string; csrfToken: string; admissionStatus: string; profile: { version: number; status: string; intro?: string; introduction?: string; nickname?: string; age?: number; gender?: string; mbti?: string }; ticket: { leaf: string | null; status: string | null } };
+export type PublicProfile = { id: string; nickname: string; age: number; intro: string; introduction?: string; mbti: string | null; tags: string[] };
 export type FeedItem = { id: string; profile: PublicProfile; myLikeState: 'none' | 'sent' | 'matched'; allowedActions: string[] };
 export type Room = { revealRequestId?: string | null; chatUntil?: string; id: string; status: string; version: number; origin: string; peer: { identity: string; profile?: PublicProfile; label?: string }; unreadCount: number; lastMessage?: { text: string }; allowedActions: string[] };
 export type Message = { id: string; sequence: number; sender: 'self' | 'peer'; text: string };

@@ -8,7 +8,7 @@ type Event = { name: string; mode: string; aiMode: string; aiReady: boolean; par
 type MidnightFlow = ReturnType<typeof import('../midnight-flow')['createMidnightFlow']>;
 type Like = { id: string; source?: PublicProfile; target?: PublicProfile; state: string };
 const blank: Profile = { nickname: '', age: '', gender: '', mbti: '', snsId: '', introduction: '', photoReady: false };
-const person = (p: PublicProfile): Person => ({ id: p.id, name: p.nickname, age: p.age, mbti: p.mbti ?? '', introduction: '', image: '', lines: [p.intro], tags: p.tags ?? [], summary: p.intro });
+const person = (p: PublicProfile): Person => ({ id: p.id, name: p.nickname, age: p.age, mbti: p.mbti ?? '', introduction: p.introduction ?? '', image: '', lines: [p.intro], tags: p.tags ?? [], summary: p.intro });
 async function pages<T>(path: string): Promise<T[]> {
   const items: T[] = []; let cursor: string | null = null;
   do { const page: Page<T> = await api(`${path}${path.includes('?') ? '&' : '?'}limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`); items.push(...page.items); cursor = page.nextCursor; } while (cursor);
@@ -119,7 +119,7 @@ export function LiveSessionProvider({ children }: { children: ReactNode; scene?:
     try {
       const info = await api<Event>(E); if (!mounted) return; setEvent(info);
       const current = await restoreSession(); if (!mounted) return; meRef.current = current; setMe(current);
-      if (current) setProfile({ ...blank, nickname: current.profile.nickname ?? '', age: String(current.profile.age ?? ''), gender: current.profile.gender === 'female' ? '여성' : current.profile.gender === 'male' ? '남성' : '', mbti: current.profile.mbti ?? '', photoReady: !!current.profile.intro });
+      if (current) setProfile({ ...blank, nickname: current.profile.nickname ?? '', age: String(current.profile.age ?? ''), gender: current.profile.gender === 'female' ? '여성' : current.profile.gender === 'male' ? '남성' : '', mbti: current.profile.mbti ?? '', introduction: current.profile.introduction ?? '', photoReady: !!current.profile.intro });
       if (current?.profile.status === 'published' && current.admissionStatus === 'active') await refresh();
     } catch { if (mounted) setError('서버에 연결하지 못했어요. 새로고침해 주세요.'); }
     finally { if (mounted) { bootComplete.current = true; setBooting(false); } }
@@ -147,7 +147,7 @@ export function LiveSessionProvider({ children }: { children: ReactNode; scene?:
   async function analyze() { await run(async () => {
     if (!me || !photo) throw Error('사진을 선택해 주세요.');
     navigate('/analysis');
-    const saved = await api<LiveMe['profile']>(`${E}/me/profile`, { method: 'PUT', body: { expectedVersion: me.profile.version, nickname: profile.nickname.trim(), age: Number(profile.age), gender: profile.gender === '여성' ? 'female' : 'male', mbti: profile.mbti || null } });
+    const saved = await api<LiveMe['profile']>(`${E}/me/profile`, { method: 'PUT', body: { expectedVersion: me.profile.version, nickname: profile.nickname.trim(), age: Number(profile.age), gender: profile.gender === '여성' ? 'female' : 'male', mbti: profile.mbti || null, introduction: profile.introduction.trim() } });
     setMe({ ...me, profile: saved });
     const form = new FormData(); form.set('expectedVersion', String(saved.version)); form.set('photo', photo);
     const job = await api<{id:string}>(`${E}/me/ai-jobs`, { method: 'POST', form });
@@ -170,7 +170,13 @@ export function LiveSessionProvider({ children }: { children: ReactNode; scene?:
       await api(`${E}/demo/chain-intents/${intent.id}/resolution`, { method: 'POST', body: { outcome: 'succeeded' } }); current = await refreshMe();
       }
     }
-    await api(`${E}/me/profile/publication`, { method: 'POST', body: { expectedVersion: current!.profile.version } }); await refreshMe(); await refresh(); navigate('/home');
+    await api(`${E}/me/profile/publication`, { method: 'POST', body: { expectedVersion: current!.profile.version } });
+    // The original flow collects the SNS ID with the profile; encrypt it on this device once admitted.
+    const contact = profile.snsId.trim();
+    if (event?.mode === 'real' && contact && !current?.contact?.configured) {
+      try { await (await getFlow()).saveContact(contact); } catch { /* It can still be saved from 내 정보. */ }
+    }
+    await refreshMe(); await refresh(); navigate('/home');
   }); }
   function sendInterest(id: string) { void run(async () => { await api(`${E}/likes`, { method: 'POST', body: { targetProfileId: id }, idempotencyKey: `like-${id}` }); await refresh(); }); }
   async function sendMessage(peerId: string, text: string) { return run(async () => {
