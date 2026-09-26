@@ -18,6 +18,19 @@ async function waitUntil(check: () => Promise<boolean>) {
   for (let i = 0; i < 120; i++) { if (await check()) return; await new Promise(r => setTimeout(r, 1000)); }
   throw new Error('처리가 지연되고 있어요. 잠시 후 다시 시도해 주세요.');
 }
+
+/** A photo is uploaded once. The server retries the same job while it remains processing. */
+export async function waitForAiJob(
+  check: () => Promise<{ status: string }>,
+  pause: (ms: number) => Promise<void> = ms => new Promise(resolve => setTimeout(resolve, ms)),
+) {
+  for (;;) {
+    const result = await check();
+    if (result.status === 'succeeded') return;
+    if (result.status === 'failed') throw new Error('AI_ANALYSIS_FAILED');
+    await pause(1000);
+  }
+}
 export function LiveSessionProvider({ children }: { children: ReactNode; scene?: string }) {
   const navigate = useNavigate(), location = useLocation();
   const [me, setMe] = useState<LiveMe | null>(null), [event, setEvent] = useState<Event | null>(null);
@@ -138,7 +151,7 @@ export function LiveSessionProvider({ children }: { children: ReactNode; scene?:
     setMe({ ...me, profile: saved });
     const form = new FormData(); form.set('expectedVersion', String(saved.version)); form.set('photo', photo);
     const job = await api<{id:string}>(`${E}/me/ai-jobs`, { method: 'POST', form });
-    await waitUntil(async () => { const result = await api<{status:string}>(`${E}/me/ai-jobs/${job.id}`); if (result.status === 'failed') throw Error('AI_ANALYSIS_FAILED'); return result.status === 'succeeded'; });
+    await waitForAiJob(() => api<{status:string}>(`${E}/me/ai-jobs/${job.id}`));
     await refreshMe(); setPhoto(null); navigate('/profile/preview', { replace: true });
   }); }
   async function publish() { await run(async () => {
