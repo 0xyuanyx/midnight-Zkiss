@@ -2,6 +2,8 @@
 
 최신 실행 명령, 환경변수, 계약 구조 및 검증 범위는 [SNS_MVP.md](SNS_MVP.md)를 따른다.
 
+공개 서비스 주소는 https://zkiss.vercel.app 이며, Vercel `/api/*` 프록시가 GCP의 HTTPS 백엔드에 연결된다. [서버 운영 안내](../deploy/gcp/README.md).
+
 일반 경로는 실제 HTTP API를 사용한다. `/preview/:scene`은 서버 요청이 없는 화면 예시다.
 
 | 항목 | 구현 |

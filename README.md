@@ -80,7 +80,7 @@ LOCAL_TLS_CERT=/path/to/local.pem LOCAL_TLS_KEY=/path/to/local.key \
 
 **배포 주소:** [zkiss.vercel.app](https://zkiss.vercel.app) · [화면 미리보기](https://zkiss.vercel.app/preview)
 
-2026-09-26 Vercel production 배포 완료. 현재는 프론트만 배포되어 있으며 공개 백엔드는 연결하지 않았습니다. 입장·Gemini 생성·대화·SNS 공개의 실제 동작은 로컬 환경에서 사용하며, 위 주소에서의 전체 흐름은 아직 검증 완료가 아닙니다. 소스는 `codex/sns-mvp-vercel` 브랜치에 푸시했으며 원격 `main`의 별도 변경과는 아직 병합하지 않았습니다.
+2026-09-26 Vercel production과 GCP 서울 리전의 전용 API·워커·DB·Midnight Devnet을 연결했습니다. `/`는 실제 서비스를, `/preview`는 예시 화면을 제공합니다. 소스는 `codex/sns-mvp-vercel` 브랜치에 푸시했으며 원격 `main`의 별도 변경과는 아직 병합하지 않았습니다. 서버 운영 방법은 [GCP 배포 안내](deploy/gcp/README.md)를 참고하세요.
 
 현재 구성은 **Vercel 프론트 + 별도 상시 실행 API·워커·PostgreSQL·Midnight 서비스**입니다. Vercel에 프론트를 올리는 것만으로 이 Mac의 로컬 API나 Devnet이 공개되는 것은 아닙니다.
 
@@ -91,8 +91,7 @@ LOCAL_TLS_CERT=/path/to/local.pem LOCAL_TLS_KEY=/path/to/local.key \
 ```sh
 npx vercel login
 npx vercel link
-# 실제 API가 있다면 ZKISS_API_ORIGIN=https://your-api.example.com 지정
-npm run build:vercel
+ZKISS_API_ORIGIN=https://zkiss-34-64-248-231.sslip.io npm run build:vercel
 npx vercel deploy --prebuilt --prod
 ```
 
@@ -113,7 +112,8 @@ npm run test:web
 - 이번 배포 준비에서 Chromium·WebKit 화면 테스트 64개 통과. 실제 Devnet 통합 2개는 별도 환경이 필요하여 이번 실행에서는 제외했습니다.
 - 실제 Gemini 소개·이미지 생성, 소개와 태그 두 개의 반환을 확인했습니다.
 - Chromium·WebKit에서 두 사용자의 실제 Local Devnet SNS 승인·대납·원장 확인·복호화·복사를 검증했습니다. 해당 통합 테스트의 AI 응답은 합성 제공자였으며 실제 Gemini 검증과 구분합니다.
-- 휴대폰 실기기, 공개 테스트넷, 배포 환경의 전체 실제 흐름은 별도 검증 대상입니다.
+- 2026-09-26 공개 Vercel + GCP 환경에서 Chromium·WebKit 각각 실제 Gemini 생성부터 Devnet 승인·양측 SNS 복호화·복사·새로고침 복원까지 전체 흐름 통과(2개 테스트, 총 7.2분). 예시 AI 응답을 사용하지 않았습니다.
+- 휴대폰 실기기와 공개 테스트넷은 별도 검증 대상입니다. 현재 시연 행사·계약의 초기 기한은 2026-10-03입니다.
 
 상세 기록: [SNS MVP](docs/SNS_MVP.md) · [프론트–백엔드 연동](docs/FRONTEND_INTEGRATION.md) · [프론트 화면 안내](web/README.md).
 
