@@ -24,7 +24,7 @@ export const localConfig: Config = {
   port: 3001,
   secureCookies: false,
   sessionHours: 12,
-  aiTimeoutMs: 30000,
+  aiTimeoutMs: 120000,
   sessionRateLimit: 30,
 };
 
@@ -66,7 +66,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     host: env.HOST ?? "127.0.0.1",
     port: integer("PORT", 3001, 1, 65535),
     sessionHours: integer("SESSION_HOURS", 12, 1, 168),
-    aiTimeoutMs: integer("AI_TIMEOUT_MS", 30000, 100, 120000),
+    aiTimeoutMs: integer("AI_TIMEOUT_MS", 120000, 100, 120000),
     sessionRateLimit: integer("SESSION_RATE_LIMIT", 30, 1, 10000),
     midnightAdapterModule: env.MIDNIGHT_ADAPTER_MODULE,
     midnightOperatorModule: env.MIDNIGHT_OPERATOR_MODULE,
