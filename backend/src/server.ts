@@ -1,6 +1,7 @@
 import { runtime } from "./runtime.js";
 import { loadProviders } from "./providers.js";
 import { buildApp } from "./app.js";
+import { registerWeb } from "./web-serving.js";
 const { config, pool } = runtime();
 try {
   await pool.query("SELECT version FROM migrations LIMIT 1");
@@ -9,6 +10,7 @@ try {
     config,
     ...(await loadProviders(config)),
   });
+  if (process.env.WEB_DIST_DIR) await registerWeb(app, process.env.WEB_DIST_DIR);
   const stop = async () => {
     await app.close();
     await pool.end();

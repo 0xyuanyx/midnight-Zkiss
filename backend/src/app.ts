@@ -108,12 +108,13 @@ export async function buildApp(options: {
       typeof adapter?.revealTerms === "function" &&
       typeof adapter?.revealStatus === "function"
     ),
+    !!options.ai || (options.config.aiMode ?? options.config.mode) === "demo",
   );
   profiles(
     app,
     options.pool,
     options.config,
-    options.ai ?? (options.config.mode === "demo" ? demoAi : undefined),
+    options.ai ?? ((options.config.aiMode ?? options.config.mode) === "demo" ? demoAi : undefined),
   );
   chain(
     app,

@@ -20,6 +20,7 @@ export function sessions(
   pool: Pool,
   config: Config,
   revealReady = false,
+  aiReady = false,
 ) {
   const cookieName =
     config.mode === "real" ? "__Host-zkiss_session" : "zkiss_session";
@@ -58,6 +59,8 @@ export function sessions(
         },
         policyVersion: e.policy_version,
         mode: config.mode,
+        aiMode: config.aiMode ?? config.mode,
+        aiReady,
       },
       req,
     );

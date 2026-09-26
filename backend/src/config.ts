@@ -8,6 +8,9 @@ export interface Config {
   midnightAdapterModule?: string;
   midnightOperatorModule?: string;
   aiProviderModule?: string;
+  aiMode?: "real" | "demo";
+  geminiApiKey?: string;
+  geminiModel?: string;
   secureCookies: boolean;
   sessionHours: number;
   aiTimeoutMs: number;
@@ -48,8 +51,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     "true";
   if (mode === "real" && !secureCookies)
     throw new Error("SECURE_COOKIES_REQUIRED");
-  const origin = env.PUBLIC_ORIGIN
-    ? new URL(env.PUBLIC_ORIGIN).origin
+  const publicOrigin = env.PUBLIC_ORIGIN ?? env.RENDER_EXTERNAL_URL;
+  const origin = publicOrigin
+    ? new URL(publicOrigin).origin
     : undefined;
   if (mode === "real" && origin && !origin.startsWith("https://"))
     throw new Error("HTTPS_ORIGIN_REQUIRED");
@@ -66,5 +70,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     midnightAdapterModule: env.MIDNIGHT_ADAPTER_MODULE,
     midnightOperatorModule: env.MIDNIGHT_OPERATOR_MODULE,
     aiProviderModule: env.AI_PROVIDER_MODULE,
+    aiMode: z.enum(["real", "demo"]).optional().parse(env.AI_MODE),
+    geminiApiKey: env.GEMINI_API_KEY,
+    geminiModel: env.GEMINI_MODEL,
   };
 }

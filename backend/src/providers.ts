@@ -1,3 +1,4 @@
+import { createGeminiProvider } from "./adapters/gemini.js";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import type { Config } from "./config.js";
@@ -14,7 +15,9 @@ export async function loadProviders(config: Config) {
     : undefined;
   const ai: AiProvider | undefined = config.aiProviderModule
     ? await load(config.aiProviderModule)
-    : undefined;
+    : config.geminiApiKey
+      ? createGeminiProvider(config.geminiApiKey, config.geminiModel ?? "")
+      : undefined;
   if (
     midnight &&
     (midnight.mode !== config.mode ||
@@ -25,7 +28,7 @@ export async function loadProviders(config: Config) {
       !midnight.capabilities)
   )
     throw new Error("INVALID_MIDNIGHT_ADAPTER");
-  if (ai && (ai.mode !== config.mode || typeof ai.analyze !== "function"))
+  if (ai && (ai.mode !== (config.aiMode ?? config.mode) || typeof ai.analyze !== "function"))
     throw new Error("INVALID_AI_PROVIDER");
   return { midnight, ai };
 }

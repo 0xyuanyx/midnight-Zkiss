@@ -66,7 +66,7 @@ export function profiles(
     "POST",
     E + "/me/ai-jobs",
     async (c) => {
-      need(ai && ai.mode === config.mode, 503, "AI_UNAVAILABLE");
+      need(ai && ai.mode === (config.aiMode ?? config.mode), 503, "AI_UNAVAILABLE");
       await limit(c, "ai", 3, 3600);
       const b = c.request.body as { expectedVersion: number };
       checkVersion(c.p.profile_version, b.expectedVersion);
@@ -75,7 +75,7 @@ export function profiles(
       const j = await one(
         c.db,
         "INSERT INTO ai_jobs(id,owner_id,profile_version,mode) VALUES($1,$2,$3,$4) RETURNING *",
-        [jobId, c.uid, b.expectedVersion, config.mode],
+        [jobId, c.uid, b.expectedVersion, ai!.mode],
       );
       return result(job(j!), 202);
     },

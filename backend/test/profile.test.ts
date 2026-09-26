@@ -257,3 +257,28 @@ test("late AI output cannot overwrite a newer draft and its input buffer is clea
     await f.close();
   }
 });
+
+test("real AI records external processing independently of demo chain mode", async () => {
+  const { localConfig } = await import('../src/config.js');
+  const f = await fixture('demo', { config: { ...localConfig, aiMode: 'real' }, ai: { mode: 'real', analyze: async () => ({ intro: '첫 문단이에요.\n\n둘째 문단이에요.', modelVersion: 'real-provider-test' }) } });
+  try {
+    const u = await activeUser(f);
+    const r = await f.app.inject({ method: 'POST', url: '/api/v1/events/evt/me/ai-jobs', ...photo(u, png) });
+    expect(r.statusCode).toBe(202);
+    const done = await waitAi(f, u, r.json().data.id);
+    expect(done).toMatchObject({ status: 'succeeded', mode: 'real', providerRetentionStatus: 'unverified', result: '첫 문단이에요.\n\n둘째 문단이에요.' });
+  } finally { await f.close(); }
+});
+
+test("missing real AI never falls back to demo analysis", async () => {
+  const { localConfig } = await import('../src/config.js');
+  const f = await fixture('demo', { config: { ...localConfig, aiMode: 'real' } });
+  try {
+    const event = await f.app.inject('/api/v1/events/evt');
+    expect(event.json().data).toMatchObject({ aiMode: 'real', aiReady: false });
+    const u = await activeUser(f);
+    const r = await f.app.inject({ method: 'POST', url: '/api/v1/events/evt/me/ai-jobs', ...photo(u, png) });
+    expect(r.statusCode).toBe(503);
+    expect((await f.pool.query('SELECT count(*)::int AS count FROM ai_jobs')).rows[0].count).toBe(0);
+  } finally { await f.close(); }
+});

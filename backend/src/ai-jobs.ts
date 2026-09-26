@@ -23,7 +23,7 @@ export function aiJobs(
   });
   return {
     async preprocess(req: FastifyRequest) {
-      need(ai && ai.mode === config.mode, 503, "AI_UNAVAILABLE");
+      need(ai && ai.mode === (config.aiMode ?? config.mode), 503, "AI_UNAVAILABLE");
       need(slots < 2, 503, "AI_UNAVAILABLE");
       slots++;
       try {
