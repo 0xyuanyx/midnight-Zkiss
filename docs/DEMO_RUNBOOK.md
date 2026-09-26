@@ -68,6 +68,14 @@ docker logs zkiss-demo-tunnel-v3 2>&1 | grep -o "https://[a-z0-9-]*\.trycloudfla
 
 ## 6. 시연 전 확인
 
+한 번에 확인(읽기 전용, 비밀값 출력 없음). 마지막 줄이 `READY`여야 한다.
+
+```bash
+bash backend/deploy/demo-check.sh
+```
+
+수동으로 확인할 때:
+
 ```bash
 U=https://<현재 터널 주소>
 for p in /health / /midnight-assets/zkir.wasm /midnight-assets/keys/admit.prover; do
