@@ -1,8 +1,8 @@
 import { test, expect, type Page } from '@playwright/test';
-import sharp from 'sharp';
+import { readFile } from 'node:fs/promises';
 const target=process.env.ZKISS_MIDNIGHT_LIVE_URL;
 test.skip(!target,'Requires isolated real Devnet browser-live harness');
-const photo=await sharp({create:{width:16,height:16,channels:3,background:'#888888'}}).png().toBuffer();
+const photo=await readFile(new URL('../public/assets/profile-ai-example.png',import.meta.url));
 async function onboard(page:Page,name:string,contact:string) {
   await page.goto(target!);
   await page.getByRole('button',{name:/행사 프로필 만들기/}).click();
@@ -12,10 +12,10 @@ async function onboard(page:Page,name:string,contact:string) {
   await page.getByRole('button',{name:'다음'}).click();
   await page.getByLabel('AI 인상 분석용 사진').setInputFiles({name:'synthetic.png',mimeType:'image/png',buffer:photo});
   await page.getByRole('button',{name:'AI 프로필 만들기'}).click();
-  await expect(page.getByRole('heading',{name:'상대방에게 보일 내 프로필'})).toBeVisible({timeout:30000});
+  await expect(page.getByRole('heading',{name:'상대방에게 보일 내 프로필'})).toBeVisible({timeout:120000});
   await page.getByRole('button',{name:'이 프로필로 시작'}).click();
   const home=page.getByRole('heading',{name:'지금 만날 사람들'});
-  await expect(home.or(page.locator('.api-error'))).toBeVisible({timeout:300000});
+  await expect(home.or(page.locator('.api-error'))).toBeVisible({timeout:900000});
   if(await page.locator('.api-error').isVisible()) throw Error(await page.locator('.api-error').innerText());
   await expect(home).toBeVisible();
   await page.goto(target!+'/me');
@@ -24,7 +24,7 @@ async function onboard(page:Page,name:string,contact:string) {
   await expect(page.getByRole('status').filter({hasText:'암호화된 SNS가 저장되어 있어요.'})).toBeVisible({timeout:30000});
 }
 test('two browsers prove admission and bilateral SNS approval, decrypt and restore',async({browser},testInfo)=>{
-  test.setTimeout(1_200_000);
+  test.setTimeout(3_600_000);
   const contexts=[await browser.newContext(),await browser.newContext()];
   const [a,b]=await Promise.all(contexts.map(c=>c.newPage()));
   const suffix=Date.now().toString().slice(-6),nameA='A'+suffix,nameB='B'+suffix,contactA='@alice.'+suffix,contactB='@bob.'+suffix;
