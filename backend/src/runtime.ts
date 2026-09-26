@@ -25,5 +25,13 @@ export function runtime() {
   pool.on("error", () =>
     console.error(JSON.stringify({ code: "DATABASE_CONNECTION_ERROR" })),
   );
+  // Pool "error" only covers idle clients. A checked-out client (relay advisory lock,
+  // chain job lane) that loses its connection would otherwise crash the process;
+  // its pending query still rejects, so the request fails without taking the API down.
+  pool.on("connect", (client) =>
+    client.on("error", () =>
+      console.error(JSON.stringify({ code: "DATABASE_CLIENT_ERROR" })),
+    ),
+  );
   return { config, pool };
 }
