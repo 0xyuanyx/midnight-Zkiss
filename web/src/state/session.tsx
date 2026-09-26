@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, type ReactNode } from 'react';
-import { findPerson } from './people';
+import { findPerson, people, ownImpression } from './people';
 
 export interface Profile {
   nickname: string;
@@ -50,14 +50,27 @@ function useSessionState(scene?: string) {
     if (!matchedIds.includes(id)) return;
     setConversations(current => ({ ...current, [id]: update(current[id] ?? emptyConversation) }));
   }
-  return { pendingMatch, dismissMatch: () => setPendingMatch(null), profile, setProfile, profileCreated, setProfileCreated, matched: matchedIds.length > 0, matchedIds, interests, sendInterest, conversations, updateConversation, scene };
+  return { people, ownImpression, pendingMatch, dismissMatch: () => setPendingMatch(null), profile, setProfile, profileCreated, setProfileCreated, matched: matchedIds.length > 0, matchedIds, interests, sendInterest, conversations, updateConversation, scene };
 }
 
-export interface Conversation { messages: Message[]; consent: Consent; unreadCount: number }
+export type RevealView = { id: string; status: string; myDecision: string; peerDecision: string; peerContact?: string; ownContact?: string; error?: string };
+export interface Conversation { reveal?: RevealView | null; revealAvailable?: boolean; messages: Message[]; consent: Consent; unreadCount: number }
 export const emptyConversation: Conversation = { messages: [], consent: { mine: false, partner: false }, unreadCount: 0 };
 
-type Session = ReturnType<typeof useSessionState>;
-const SessionContext = createContext<Session | null>(null);
+export type Session = ReturnType<typeof useSessionState> & {
+  live?: boolean; midnightAvailable?: boolean; busy?: boolean; error?: string;
+  enter?: () => Promise<void>; analyze?: () => Promise<void>; publish?: () => Promise<void>;
+  setPhoto?: (photo: File | null) => void;
+  sendMessage?: (peerId: string, text: string) => Promise<boolean>;
+  participantCount?: number;
+  chainBusy?: boolean;
+  saveContact?: (contact: string) => Promise<boolean>;
+  requestReveal?: (peerId: string) => Promise<boolean>;
+  decideReveal?: (peerId: string, action: 'accept' | 'reject' | 'cancel') => Promise<boolean>;
+  retryReveal?: (peerId: string) => Promise<boolean>;
+  contactConfigured?: boolean;
+};
+export const SessionContext = createContext<Session | null>(null);
 
 /** In-memory demo state only. Photos, messages, and identity are never persisted. */
 export function SessionProvider({ children, scene }: { children: ReactNode; scene?: string }) {

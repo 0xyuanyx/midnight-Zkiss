@@ -135,7 +135,7 @@ v2 Devnet E2E(`npm run test:devnet`, 11:22–11:30)도 모두 통과했다. 운�
   - 수수료·타이밍 메타데이터
   - 서버가 관계를 앎(A안)
   - 사용자 확정 전
-- **H3**(다른 티켓 보유자의 admit 선점)은 미해결이다. binding에 nullifier를 넣는 백엔드 스키마 변경이 필요하다.
+- **H3**는 2026-09-26 계약 admissionKey(bindingHash, nullifier)·백엔드 immutable admissionNullifier·단말 privateState 대조로 수정했다. 단위 회귀 검증 완료. 전체 compile 완료. 새 v2 계약 배포가 필수다. 2026-09-26 새 Devnet 계약으로 backend/integration/real-devnet.ts 재실행 성공: 두 참가자 admission·SNS 승인·HPKE 교환·방 종료. fee relay는 다른 nullifier의 sponsorship을 거절하고 정확한 효과만 대납했다. 결과: backend/reports/backend-real-devnet.json. 모바일 브라우저 검증과는 별개다.
 - **백엔드 규약 전제(Codex 구현 필요)**:
   - M1: verify 입력은 저장된 PreparedIntent로만 만든다.
   - M4: 두 봉투가 모두 모인 뒤 동시에 전달한다.

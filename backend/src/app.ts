@@ -1,3 +1,5 @@
+import { midnightRelay } from './routes/midnight-relay.js';
+import type { MidnightRelay } from './adapters/relay.js';
 import Fastify from "fastify";
 import cookie from "@fastify/cookie";
 import multipart from "@fastify/multipart";
@@ -22,6 +24,7 @@ export async function buildApp(options: {
   config: Config;
   ai?: AiProvider;
   midnight?: MidnightAdapter;
+  relay?: MidnightRelay;
 }) {
   const app = Fastify({ logger: false, bodyLimit: 16384 });
   app.decorate(
@@ -32,7 +35,13 @@ export async function buildApp(options: {
   await app.register(multipart, {
     limits: { fileSize: 5 * 1024 * 1024, files: 1, fields: 2, parts: 3 },
   });
-  await app.register(rateLimit, { max: 300, timeWindow: "1 minute" });
+  await app.register(rateLimit, {
+    max: 300,
+    timeWindow: "1 minute",
+    // Match registered routes so encoded API URLs cannot bypass the quota.
+    // Page loads and static assets must not consume the API budget.
+    allowList: (req) => !req.routeOptions.url?.startsWith("/api/"),
+  });
   app.addHook("onRequest", async (req) => {
     if (["GET", "HEAD", "OPTIONS"].includes(req.method)) return;
     const origin = req.headers.origin;
@@ -133,6 +142,8 @@ export async function buildApp(options: {
     options.midnight ??
       (options.config.mode === "demo" ? demoMidnight : undefined),
   );
+  midnightRelay(app, options.pool, options.config, options.relay);
+  if (options.relay?.stop) app.addHook("onClose", async () => options.relay!.stop!());
   stream(app, options.pool);
   return app;
 }

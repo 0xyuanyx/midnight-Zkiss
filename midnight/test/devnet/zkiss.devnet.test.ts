@@ -18,6 +18,7 @@ import { zkissIndexerView, zkissTranscriptOf } from '../../src/ledger-decoder.js
 import { bytesToHex, decodeContact, hexToBytes, randomBytes32 } from '../../src/encoding.js';
 import { openContact, sealContact } from '../../src/envelope.js';
 import {
+  admissionNullifierFor,
   newParticipant,
   parseTerms,
   roomMaterial,
@@ -109,11 +110,11 @@ describe('zkiss v2 integration on Local Devnet (proof server)', () => {
   };
 
   // 백엔드 Z01(admission) → 단말 증명·제출 → Z02 txId → worker verify 입력(저장된 prepare 결과로 구성)
-  const admitVia = async (who: string, h: ZkissHandle) => {
-    const b = makeBinding(who, 'admission');
+  const admitVia = async (who: string, h: ZkissHandle, ps: ReturnType<typeof newParticipant>) => {
+    const b = makeBinding(who, 'admission', { admissionNullifier: bytesToHex(admissionNullifierFor(ps, scope())) });
     const bh = bindingHashOf(b);
     const intent = await adapter.prepare(b, bh, { event });
-    const sub = await tx(`${who} admit`, () => submitAdmission(h, intent, { network: NETWORK, contractAddress: event.contractAddress, eventScope: scope() }));
+    const sub = await tx(`${who} admit`, () => submitAdmission(h, intent, { network: NETWORK, contractAddress: event.contractAddress, eventScope: scope(), privateState: ps }));
     const input: VerificationInput = { ...intent, intentId: b.intentId, purpose: 'admission', bindingHash: bh, expiresAt: b.expiresAt, transactionId: sub.transactionId };
     return { b, bh, intent, sub, input };
   };
@@ -164,17 +165,18 @@ describe('zkiss v2 integration on Local Devnet (proof server)', () => {
     const hC: ZkissHandle = await handle('C', C);
 
     // ---- M01 참가 ----
-    const admA = await admitVia('A', hA);
+    const admA = await admitVia('A', hA, A);
     expect((await verifyUntilSettled(admA.input, 'verify A admission')).status).toBe('succeeded');
-    const bForged = makeBinding('C', 'admission');
+    const bForged = makeBinding('C', 'admission', { admissionNullifier: bytesToHex(admissionNullifierFor(C, scope())) });
     const forged = await adapter.prepare(bForged, bindingHashOf(bForged), { event });
     const vForged = await adapter.verify({ ...forged, intentId: bForged.intentId, purpose: 'admission', bindingHash: bindingHashOf(bForged), expiresAt: bForged.expiresAt, transactionId: admA.sub.transactionId });
     log.push({ step: 'verify C intent with A tx id', ms: 0, verify: `${vForged.status}:${'reasonCode' in vForged ? vForged.reasonCode : ''}` });
     expect(vForged).toEqual({ status: 'failed', reasonCode: 'EFFECT_NOT_FOUND' });
-    await rejected('unissued ticket admit', async () => admitVia('M', await handle('M', newParticipant())), /ticket not issued/);
-    await rejected('same ticket second admit', () => admitVia('A', hA), /ticket already admitted/);
-    await admitVia('B', hB);
-    await admitVia('C', hC);
+    const M = newParticipant();
+    await rejected('unissued ticket admit', async () => admitVia('M', await handle('M', M), M), /ticket not issued/);
+    await rejected('same ticket second admit', () => admitVia('A', hA, A), /ticket already admitted/);
+    await admitVia('B', hB, B);
+    await admitVia('C', hC, C);
 
     // 백엔드가 불러갈 진입 모듈(MIDNIGHT_ADAPTER_MODULE) 자체로도 같은 판정이 나오는지
     process.env.MIDNIGHT_NETWORK = NETWORK;
@@ -301,7 +303,7 @@ describe('zkiss v2 integration on Local Devnet (proof server)', () => {
     expect(await adapter.revealStatus(event, transcriptHash)).toBe('closed');
     expect(await verifyUntilSettled(apA.input, 'verify A approval after close')).toEqual({ status: 'failed', reasonCode: 'ROOM_CLOSED' });
     await rejected('approval after room closed', () => (hB2 as any).callTx.approveReveal(randomBytes32(), BigInt(Math.floor(Date.now() / 1000) + 600), roomId, parseTerms(other.terms)), /room closed/);
-  });
+  }, 900_000);
 });
 
 const rawTx = async (identifier: string): Promise<string> => {

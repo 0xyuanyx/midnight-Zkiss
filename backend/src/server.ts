@@ -1,3 +1,4 @@
+import { registerIndexerProxy } from './indexer-proxy.js';
 import { runtime } from "./runtime.js";
 import { loadProviders } from "./providers.js";
 import { buildApp } from "./app.js";
@@ -10,6 +11,7 @@ try {
     config,
     ...(await loadProviders(config)),
   });
+  if (process.env.MIDNIGHT_INDEXER_PROXY_URL) await registerIndexerProxy(app, process.env.MIDNIGHT_INDEXER_PROXY_URL);
   if (process.env.WEB_DIST_DIR) await registerWeb(app, process.env.WEB_DIST_DIR);
   const stop = async () => {
     await app.close();

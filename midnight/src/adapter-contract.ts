@@ -13,6 +13,7 @@ export interface Binding {
   deviceKeyVersion: number;
   revealRequestId: string | null;
   transcriptHash: string | null;
+  admissionNullifier?: string | null;
   nonce: string;
   expiresAt: string;
 }

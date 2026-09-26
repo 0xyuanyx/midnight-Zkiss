@@ -1,13 +1,12 @@
 import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSession } from '../state/session';
-import { findPerson } from '../state/people';
 
 export function MatchDialog() {
-  const { pendingMatch, dismissMatch, profile, matchedIds } = useSession();
+  const { pendingMatch, dismissMatch, profile, matchedIds, people } = useSession();
   const dialog = useRef<HTMLDialogElement>(null);
   const navigate = useNavigate();
-  const person = pendingMatch && matchedIds.includes(pendingMatch) ? findPerson(pendingMatch) : undefined;
+  const person = pendingMatch && matchedIds.includes(pendingMatch) ? people.find(p => p.id === pendingMatch) : undefined;
   const peerId = person?.id;
 
   useEffect(() => {

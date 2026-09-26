@@ -13,7 +13,8 @@ const stop = () => {
 process.once("SIGINT", stop);
 process.once("SIGTERM", stop);
 try {
-  const providers = await loadProviders(config);
+  // The relay owns an API-only fee wallet. A worker must not instantiate it.
+  const providers = await loadProviders(config, { includeRelay: false });
   const midnight =
     providers.midnight ?? (config.mode === "demo" ? demoMidnight : undefined);
   const operator =

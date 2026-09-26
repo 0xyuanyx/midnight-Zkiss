@@ -3,14 +3,14 @@ import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { Badge, Button, Header, Progress } from '../components/ui';
 import { useSession } from '../state/session';
 import { ImpressionCard } from '../components/ImpressionCard';
-import { ownImpression } from '../state/people';
 
 export function EntryPage() {
   const navigate = useNavigate();
+  const { live, enter } = useSession();
   return <div className="screen entry-page">
     <Header />
     <main className="page-content">
-      <Badge>✦ 현장 QR 인증 완료</Badge>
+      <Badge>{live ? '✦ 행사 참여' : '✦ 현장 QR 인증 완료'}</Badge>
       <h1>오늘의 행사에서<br />새로운 인연을 만나봐요.</h1>
       <p className="entry-description">실명과 SNS는 숨긴 채, AI가 만든 첫인상 프로필로 가볍게 시작해요.</p>
       <section className="event-card" aria-label="MIDNIGHT SEOUL 행사 카드">
@@ -18,14 +18,14 @@ export function EntryPage() {
         <div className="qr-visual" aria-hidden="true"><span>Z</span></div>
         <p>2026.09.22 · 성수 S-FACTORY</p>
       </section>
-      <Button variant="lime" onClick={() => navigate('/profile')}>행사 프로필 만들기 <span aria-hidden="true">→</span></Button>
-      <p className="entry-note">◈ &nbsp; 행사 참가 인증은 완료됐어요.<br />프로필 입력에 필요한 개인정보와 SNS는 외부로 전송되지 않아요.</p>
+      <Button variant="lime" onClick={() => live ? void enter?.() : navigate('/profile')}>행사 프로필 만들기 <span aria-hidden="true">→</span></Button>
+      <p className="entry-note">◈ &nbsp; {live ? '행사 프로필을 만들고 참여해 주세요.' : '행사 참가 인증은 완료됐어요.'}<br />{live ? '사진은 Gemini 분석에 사용되며 원본은 피드에 공개하지 않아요.' : '프로필 입력에 필요한 개인정보와 SNS는 외부로 전송되지 않아요.'}</p>
     </main>
   </div>;
 }
 
 export function ProfilePage() {
-  const { profile, setProfile } = useSession();
+  const { profile, setProfile, live, setPhoto, analyze, busy } = useSession();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [formStep, setFormStep] = useState<1 | 2>(() => searchParams.get('step') === '2' ? 2 : 1);
@@ -35,7 +35,7 @@ export function ProfilePage() {
   const snsIdValid = profile.snsId.trim().length >= 1 && profile.snsId.trim().length <= 30;
   const introductionValid = profile.introduction.trim().length >= 1 && profile.introduction.trim().length <= 20;
   const basicReady = nicknameValid && ageValid && Boolean(profile.gender);
-  const ready = basicReady && mbtiValid && snsIdValid && introductionValid && profile.photoReady;
+  const ready = basicReady && (live ? (!profile.mbti || /^[IE][NS][FT][JP]$/.test(profile.mbti)) : mbtiValid && snsIdValid && introductionValid) && profile.photoReady && !busy;
 
   function markPhotoReady() {
     setProfile(current => ({ ...current, photoReady: true }));
@@ -48,6 +48,7 @@ export function ProfilePage() {
       return;
     }
     if (!ready) return;
+    if (live) { void analyze?.(); return; }
     setProfile(current => ({
       ...current,
       nickname: current.nickname.trim(),
@@ -81,10 +82,10 @@ export function ProfilePage() {
           <Button disabled={!basicReady} type="submit">다음</Button>
         </> : <>
           <label className="field">MBTI
-            <input autoComplete="off" value={profile.mbti} onChange={e => setProfile(current => ({ ...current, mbti: e.target.value.toUpperCase() }))} placeholder="예: ENFP" maxLength={4} pattern="[A-Za-z]{4}" aria-describedby={profile.mbti && !mbtiValid ? 'mbti-hint' : undefined} required />
+            <input autoComplete="off" value={profile.mbti} onChange={e => setProfile(current => ({ ...current, mbti: e.target.value.toUpperCase() }))} placeholder="예: ENFP" maxLength={4} pattern="[A-Za-z]{4}" aria-describedby={profile.mbti && !mbtiValid ? 'mbti-hint' : undefined} required={!live} />
           </label>
           {profile.mbti && !mbtiValid && <p id="mbti-hint" className="field-error">MBTI 4글자를 입력해 주세요.</p>}
-          <label className="field">SNS ID
+          {!live && <><label className="field">SNS ID
             <input autoComplete="off" value={profile.snsId} onChange={e => setProfile(current => ({ ...current, snsId: e.target.value }))} placeholder="예: @zkiss" maxLength={30} required />
           </label>
           <p className="sns-privacy-notice" role="note"><strong>🔒 SNS ID는 상호 공개 전까지 비공개예요.</strong><br />상대방은 물론 관리자도 확인할 수 없어요.</p>
@@ -93,12 +94,13 @@ export function ProfilePage() {
             <textarea id="introduction" value={profile.introduction} onChange={e => setProfile(current => ({ ...current, introduction: e.target.value }))} placeholder="예: 전시와 음악을 좋아해요." maxLength={20} aria-describedby="introduction-count" required />
             <span id="introduction-count" className="character-count">{profile.introduction.length}/20</span>
           </div>
+          </>}
           <div className="photo-field">
             <span className="field-label">AI 인상 분석용 사진</span>
-            <button className={`photo-picker ${profile.photoReady ? 'photo-picker--ready' : ''}`} type="button" onClick={markPhotoReady} aria-describedby="photo-help">
+            {live ? <input aria-label="AI 인상 분석용 사진" className="photo-picker" type="file" accept="image/jpeg,image/png,image/webp" onChange={e => setPhoto?.(e.target.files?.[0] ?? null)} /> : <button className={`photo-picker ${profile.photoReady ? 'photo-picker--ready' : ''}`} type="button" onClick={markPhotoReady} aria-describedby="photo-help">
               <span aria-live="polite">{profile.photoReady ? '사진이 준비되었어요!' : '사진 한 장 추가하기'}</span>
-            </button>
-            <p id="photo-help" className="photo-help">사진은 AI 분석 후 즉시 삭제되며 보관되지 않아요.<br />피드에는 원본 사진이 나타나지 않아요.</p>
+            </button>}
+            <p id="photo-help" className="photo-help">{live ? '사진은 Google Gemini로 전송해 분석합니다. 우리 서버는 처리 후 사진을 삭제하며, Google의 보관 정책이 별도로 적용됩니다. 피드에는 원본 사진을 공개하지 않습니다.' : <>사진은 AI 분석 후 즉시 삭제되며 보관되지 않아요.<br />피드에는 원본 사진이 나타나지 않아요.</>}</p>
           </div>
           <div className="profile-step-actions"><Button variant="outline" type="button" onClick={() => setFormStep(1)}>이전</Button><Button disabled={!ready} type="submit">AI 프로필 만들기</Button></div>
         </>}
@@ -108,17 +110,17 @@ export function ProfilePage() {
 }
 
 export function AnalysisPage() {
-  const { profile, setProfileCreated, scene } = useSession();
+  const { profile, setProfileCreated, scene, live, error } = useSession();
   const navigate = useNavigate();
   const hold = scene === 'analysis';
   useEffect(() => {
-    if (!profile.photoReady || hold) return;
+    if (live || !profile.photoReady || hold) return;
     const timer = window.setTimeout(() => {
       setProfileCreated(true);
       navigate('/profile/preview', { replace: true });
     }, 2600);
     return () => window.clearTimeout(timer);
-  }, [profile.photoReady, hold, navigate, setProfileCreated]);
+  }, [profile.photoReady, hold, navigate, setProfileCreated, live]);
   if (!profile.photoReady) return <Navigate to="/profile" replace />;
   return <div className="screen analysis-page">
     <Header back="/profile" />
@@ -128,16 +130,16 @@ export function AnalysisPage() {
         <img className="analysis-ring" src="/assets/analysis-ring.svg" alt="" width={191} height={191} />
         <strong>AI</strong>
       </div>
-      <h1>첫인상을 만들고 있어요</h1>
+      <h1>{error ? '분석을 완료하지 못했어요' : '첫인상을 만들고 있어요'}</h1>{error && <Link className="button button--outline" to="/profile?step=2">사진 다시 선택하기</Link>}
       <p>표정과 분위기를 바탕으로<br />부담 없는 소개 문구를 작성하는 중이에요.</p>
       <div className={`scan-progress ${hold ? 'scan-progress--still' : ''}`} aria-hidden="true"><span /></div>
-      <span className="sr-only">실제 AI 분석 없이 예시 프로필로 연결되는 체험입니다.</span>
+      {!live && <span className="sr-only">실제 AI 분석 없이 예시 프로필로 연결되는 체험입니다.</span>}
     </main>
   </div>;
 }
 
 export function ProfilePreviewPage() {
-  const { profile, profileCreated } = useSession();
+  const { profile, profileCreated, ownImpression, live, publish, busy } = useSession();
   if (!profileCreated) return <Navigate to="/profile" replace />;
   return <div className="screen profile-preview-page">
     <div className="profile-decoration" aria-hidden="true">
@@ -152,7 +154,7 @@ export function ProfilePreviewPage() {
       <ImpressionCard name={profile.nickname} age={profile.age} gender={profile.gender} mbti={profile.mbti} introduction={profile.introduction} impression={ownImpression} />
       <div className="preview-actions">
         <Link className="button button--outline" to="/profile?step=2">수정</Link>
-        <Link className="button button--lime" to="/home">이 프로필로 시작</Link>
+        {live ? <Button variant="lime" disabled={busy} onClick={() => void publish?.()}>{busy ? '참가를 확인하고 있어요…' : '이 프로필로 시작'}</Button> : <Link className="button button--lime" to="/home">이 프로필로 시작</Link>}
       </div>
     </main>
   </div>;

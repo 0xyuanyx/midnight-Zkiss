@@ -7,6 +7,7 @@ export interface Config {
   origin?: string;
   midnightAdapterModule?: string;
   midnightOperatorModule?: string;
+  midnightRelayModule?: string;
   aiProviderModule?: string;
   aiMode?: "real" | "demo";
   geminiApiKey?: string;
@@ -69,6 +70,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     sessionRateLimit: integer("SESSION_RATE_LIMIT", 30, 1, 10000),
     midnightAdapterModule: env.MIDNIGHT_ADAPTER_MODULE,
     midnightOperatorModule: env.MIDNIGHT_OPERATOR_MODULE,
+    midnightRelayModule: env.MIDNIGHT_RELAY_MODULE,
     aiProviderModule: env.AI_PROVIDER_MODULE,
     aiMode: z.enum(["real", "demo"]).optional().parse(env.AI_MODE),
     geminiApiKey: env.GEMINI_API_KEY,

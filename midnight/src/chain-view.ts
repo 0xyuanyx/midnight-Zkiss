@@ -10,7 +10,7 @@ export interface ChainSnapshot {
   blockRef: string; // "<height>:<hash>" of the state that was read
   blockTimeSec: bigint | null;
   eventScope: Uint8Array;
-  admissionExpiry(bindingHash: Uint8Array): bigint | undefined;
+  admissionExpiry(admissionKey: Uint8Array): bigint | undefined;
   /** consents[consentKey(bindingHash, slotValue)]: only the owner of that slot can have written it. */
   consent(bindingHash: Uint8Array, slotValue: Uint8Array): ConsentView | undefined;
   approval(transcript: Uint8Array): ApprovalView | undefined;

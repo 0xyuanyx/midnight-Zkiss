@@ -1,4 +1,4 @@
-// ZKiss Midnight protocol v1 (zkiss-midnight-v1) -- one contract per event.
+// ZKiss Midnight protocol v2 (zkiss-midnight-v2) -- one contract per event.
 // Spec: midnight/PROTOCOL.md sections 2-3 (authoritative).
 //
 // Toolchain: Compact 0.31.1 (`compact compile +0.31.1`), compact-runtime 0.16.0.
@@ -21,6 +21,7 @@
 //   operatorKey(sk)                      = H("zkiss:v1:operator", sk)
 //   ticketLeaf(s)                        = H("zkiss:v1:ticket", s)
 //   nullifierOf(scope, s)                = H("zkiss:v1:nullifier", scope, s)
+//   admissionKey(bindingHash, nullifier) = H("zkiss:v2:admission", bindingHash, nullifier)
 //   admittedLeafOf(scope, s)             = H("zkiss:v1:admitted", scope, s)
 //   slotOf(scope, roomId, s)             = H("zkiss:v1:slot", scope, roomId, s)
 //   recipientKeyCommit(pk)               = H("zkiss:v1:rk", pk)
@@ -112,7 +113,7 @@ export ledger admitted: HistoricMerkleTree<12, Bytes<32>>;
 
 export ledger nullifiers: Set<Bytes<32>>;
 
-export ledger admissions: Map<Bytes<32>, Uint<64>>; // bindingHash -> expiresAt
+export ledger admissions: Map<Bytes<32>, Uint<64>>; // admissionKey(bindingHash, ticket nullifier) -> expiresAt
 
 export ledger rooms: Map<Bytes<32>, Room>; // roomId -> Room
 
@@ -166,6 +167,10 @@ export pure circuit ticketLeaf(s: Bytes<32>): Bytes<32> {
 
 export pure circuit nullifierOf(scope: Bytes<32>, s: Bytes<32>): Bytes<32> {
   return persistentHash<Vector<3, Bytes<32>>>([pad(32, "zkiss:v1:nullifier"), scope, s]);
+}
+
+export pure circuit admissionKey(bh: Bytes<32>, nf: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<3, Bytes<32>>>([pad(32, "zkiss:v2:admission"), bh, nf]);
 }
 
 export pure circuit admittedLeafOf(scope: Bytes<32>, s: Bytes<32>): Bytes<32> {
@@ -240,7 +245,6 @@ export circuit admit(bindingHash: Bytes<32>, expiresAt: Uint<64>): [] {
   const exp = disclose(expiresAt);
   assert(blockTimeLt(eventEnd), "event closed");
   assert(blockTimeLt(exp), "intent expired");
-  assertBindingUnused(bh);
 
   const s = ticketSecret();
   const leaf = ticketLeaf(s);
@@ -252,12 +256,14 @@ export circuit admit(bindingHash: Bytes<32>, expiresAt: Uint<64>): [] {
 
   // The nullifier is disclosed at admission by design (one admission per ticket).
   const nf = disclose(nullifierOf(eventScope, s));
+  const key = admissionKey(bh, nf);
+  assertBindingUnused(key);
   assert(!nullifiers.member(nf), "ticket already admitted");
   nullifiers.insert(nf);
   // admittedLeaf is inserted publicly at admission by design (PROTOCOL section 2);
   // later circuits only prove membership against its root.
   admitted.insert(disclose(admittedLeafOf(eventScope, s)));
-  admissions.insert(bh, exp);
+  admissions.insert(key, exp);
 }
 
 // M02: operator registers two anonymous slots for a room.

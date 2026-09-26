@@ -29,6 +29,7 @@ export const trustedAdapter: MidnightAdapter = {
   },
 };
 export const admission = {
+  admissionNullifier: "11".repeat(32),
   purpose: "admission",
   devicePublicKey: Buffer.alloc(32, 1).toString("base64"),
   deviceKeyVersion: 1,
@@ -182,4 +183,19 @@ test("adapter preparation failure returns an unavailable state without committin
   } finally {
     await f.close();
   }
+});
+
+test("real admission requires an immutable ticket nullifier across retries", async () => {
+  const f = await fixture("real", { midnight: trustedAdapter });
+  try {
+    const u = await user(f);
+    await issuedTicket(f, u);
+    const { admissionNullifier, ...missing } = admission;
+    expect((await call(f, u, "POST", "/events/evt/chain-intents", missing)).statusCode).toBe(400);
+    expect((await call(f, u, "POST", "/events/evt/chain-intents", admission)).statusCode).toBe(201);
+    const saved = (await f.pool.query("SELECT binding FROM chain_intents WHERE owner_id=$1", [u.id])).rows;
+    expect(saved[0].binding.admissionNullifier).toBe(admissionNullifier);
+    expect((await call(f, u, "POST", "/events/evt/chain-intents", { ...admission, admissionNullifier: "22".repeat(32) })).statusCode).toBe(409);
+    expect((await call(f, u, "POST", "/events/evt/chain-intents", admission)).statusCode).toBe(201);
+  } finally { await f.close(); }
 });
