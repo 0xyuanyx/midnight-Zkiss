@@ -19,6 +19,7 @@ export function publicProfile(p: Row) {
     age: x.age,
     gender: x.gender,
     intro: x.intro ?? "",
+    introduction: x.introduction ?? "",
     introSource: x.introSource ?? "ai",
     tags: x.tags ?? [],
     mbti: x.mbti ?? null,

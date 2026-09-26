@@ -43,6 +43,8 @@ export function profiles(
             .nullable()
             .optional(),
           tags: z.array(z.string().trim().min(1).max(30)).max(5).optional(),
+          // Participant-written 20-character introduction shown with the AI profile.
+          introduction: z.string().trim().min(1).max(20).optional(),
         })
         .strict()
         .parse(c.request.body);

@@ -299,3 +299,21 @@ test("missing real AI never falls back to demo analysis", async () => {
     expect((await f.pool.query('SELECT count(*)::int AS count FROM ai_jobs')).rows[0].count).toBe(0);
   } finally { await f.close(); }
 });
+test("participant introduction is limited to 20 characters and published with the profile", async () => {
+  const f = await fixture();
+  try {
+    const a = await activeUser(f, "A"),
+      b = await activeUser(f, "B");
+    const base = { expectedVersion: 1, nickname: "B", age: 24, gender: "unspecified" };
+    expect((await call(f, b, "PUT", "/events/evt/me/profile", { ...base, introduction: "가".repeat(21) })).statusCode).toBe(422);
+    const saved = await call(f, b, "PUT", "/events/evt/me/profile", { ...base, introduction: "전시와 음악을 좋아해요." });
+    expect(saved.statusCode).toBe(200);
+    expect(saved.json().data).toMatchObject({ introduction: "전시와 음악을 좋아해요.", intro: "테스트 소개" });
+    // Drafts stay private until publication; publication copies the whole profile.
+    expect((await call(f, a, "GET", "/events/evt/feed")).json().data.items[0].profile.introduction).toBe("");
+    await f.pool.query("UPDATE participants SET published_profile=profile WHERE id=$1", [b.id]);
+    expect((await call(f, a, "GET", "/events/evt/feed")).json().data.items[0].profile.introduction).toBe("전시와 음악을 좋아해요.");
+  } finally {
+    await f.close();
+  }
+});
