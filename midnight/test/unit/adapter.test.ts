@@ -1,3 +1,4 @@
+import { pureCircuits } from '../../contract/managed/zkiss/contract/index.js';
 // Adapter decision logic over a fake chain snapshot. Real chain readback is covered by test/devnet.
 import { describe, expect, it } from 'vitest';
 import { createMidnightAdapter, readRevealStatus, type AdapterConfig } from '../../src/adapter.js';
@@ -48,6 +49,7 @@ const binding = (over: Partial<Binding> = {}): Binding => ({
   deviceKeyVersion: 1,
   revealRequestId: null,
   transcriptHash: null,
+  admissionNullifier: '11'.repeat(32),
   nonce: 'n',
   expiresAt: iso(NOW + 600),
   ...over,
@@ -109,7 +111,7 @@ describe('v2 event context', () => {
     const a = createMidnightAdapter(cfg(chain));
     const bh = 'ce'.repeat(32);
     const p = await a.prepare(binding(), bh, { event: { ...EVENT, eventScope: hex(randomBytes32()) } });
-    chain.admissions.set(bh, BigInt(NOW + 600));
+    chain.admissions.set(hex(pureCircuits.admissionKey(hexToBytes(bh), hexToBytes(binding().admissionNullifier!))), BigInt(NOW + 600));
     const v = await a.verify({ ...p, intentId: 'i1', purpose: 'admission', bindingHash: bh, expiresAt: binding().expiresAt, transactionId: 'aa' });
     expect(v).toEqual({ status: 'failed', reasonCode: 'EVENT_SCOPE_MISMATCH' });
   });
@@ -158,12 +160,22 @@ describe('revealTerms / revealStatus', () => {
 
 describe('admission verify', () => {
   const bh = 'cd'.repeat(32);
+  it('H3: another valid ticket cannot activate or preempt the victim binding', async () => {
+    const chain = new FakeChain();
+    const a = createMidnightAdapter(cfg(chain));
+    const input = await verifyInput(a, binding(), bh);
+    chain.admissions.set(hex(pureCircuits.admissionKey(hexToBytes(bh), hexToBytes('22'.repeat(32)))), BigInt(NOW + 600));
+    chain.tx = 'success';
+    expect(await a.verify(input)).toEqual({ status: 'failed', reasonCode: 'EFFECT_NOT_FOUND' });
+    chain.admissions.set(hex(pureCircuits.admissionKey(hexToBytes(bh), hexToBytes(binding().admissionNullifier!))), BigInt(NOW + 600));
+    expect((await a.verify(input)).status).toBe('succeeded');
+  });
   it('pending → succeeded only after the ledger effect with matching expiry exists', async () => {
     const chain = new FakeChain();
     const a = createMidnightAdapter(cfg(chain));
     const input = await verifyInput(a, binding(), bh);
     expect(await a.verify(input)).toEqual({ status: 'pending' });
-    chain.admissions.set(bh, BigInt(NOW + 600));
+    chain.admissions.set(hex(pureCircuits.admissionKey(hexToBytes(bh), hexToBytes(binding().admissionNullifier!))), BigInt(NOW + 600));
     const v = await a.verify(input);
     expect(v.status).toBe('succeeded');
   });
@@ -194,7 +206,7 @@ describe('admission verify', () => {
   });
   it('rejects tampered inputs', async () => {
     const chain = new FakeChain();
-    chain.admissions.set(bh, BigInt(NOW + 600));
+    chain.admissions.set(hex(pureCircuits.admissionKey(hexToBytes(bh), hexToBytes(binding().admissionNullifier!))), BigInt(NOW + 600));
     const a = createMidnightAdapter(cfg(chain));
     const input = await verifyInput(a, binding(), bh);
     expect((await a.verify({ ...input, bindingHash: 'ef'.repeat(32) })).status).toBe('failed');
@@ -202,7 +214,7 @@ describe('admission verify', () => {
     expect((await a.verify({ ...input, contractAddress: 'cd'.repeat(32) })).status).not.toBe('succeeded');
     expect((await a.verify({ ...input, expiresAt: iso(NOW + 9999) })).status).toBe('failed');
     expect((await a.verify({ ...input, purpose: 'reveal_approval' })).status).toBe('failed');
-    chain.admissions.set(bh, BigInt(NOW + 1)); // same hash, different expiry on chain
+    chain.admissions.set(hex(pureCircuits.admissionKey(hexToBytes(bh), hexToBytes(binding().admissionNullifier!))), BigInt(NOW + 1)); // same hash, different expiry on chain
     expect(await a.verify(input)).toEqual({ status: 'failed', reasonCode: 'BINDING_MISMATCH' });
   });
 });

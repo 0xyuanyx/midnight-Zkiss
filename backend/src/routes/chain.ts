@@ -105,6 +105,7 @@ export function chain(
           z
             .object({
               purpose: z.literal("admission"),
+              admissionNullifier: z.string().regex(/^[a-f0-9]{64}$/).optional(),
               devicePublicKey: z
                 .string()
                 .max(88)
@@ -127,6 +128,8 @@ export function chain(
         deadline = Date.now() + 10 * 60 * 1000;
       if (b.purpose === "admission") {
         need(adapter.capabilities.admission, 503, "FEATURE_NOT_READY");
+        need(config.mode !== "real" || b.admissionNullifier, 400, "ADMISSION_NULLIFIER_REQUIRED");
+        need(!c.p.admission_nullifier || c.p.admission_nullifier === b.admissionNullifier, 409, "ADMISSION_NULLIFIER_CHANGED");
         need(c.p.admission_status !== "active", 409, "ALREADY_ADMITTED");
         need(c.p.ticket_status === "issued", 409, "TICKET_NOT_ISSUED");
         need(
@@ -150,8 +153,8 @@ export function chain(
         if (b.deviceKeyVersion < c.p.device_key_version)
           fail(409, "KEY_VERSION_CHANGED");
         await c.db.query(
-          "UPDATE participants SET device_public_key=$2,device_key_version=$3,admission_status='admission_pending' WHERE id=$1",
-          [c.uid, b.devicePublicKey, b.deviceKeyVersion],
+          "UPDATE participants SET device_public_key=$2,device_key_version=$3,admission_status='admission_pending',admission_nullifier=COALESCE(admission_nullifier,$4) WHERE id=$1",
+          [c.uid, b.devicePublicKey, b.deviceKeyVersion, b.admissionNullifier ?? null],
         );
         c.p.device_public_key = b.devicePublicKey;
         c.p.device_key_version = b.deviceKeyVersion;
@@ -214,6 +217,7 @@ export function chain(
         deviceKeyVersion: c.p.device_key_version,
         revealRequestId: revealId,
         transcriptHash: transcript,
+        admissionNullifier: b.purpose === "admission" ? (b.admissionNullifier ?? null) : null,
         nonce: token(),
         expiresAt: new Date(Math.floor(deadline / 1000) * 1000).toISOString(),
       };

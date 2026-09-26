@@ -1,3 +1,4 @@
+import { LiveSessionProvider } from './state/liveSession';
 import { useEffect, useRef } from 'react';
 import { Link, Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom';
 import { HomePage, LikesPage } from './pages/Feed';
@@ -66,7 +67,8 @@ function AppSession() {
     window.scrollTo(0, 0);
   }, [location.pathname, scene]);
 
-  return <SessionProvider key={sessionKey.current} scene={sessionScene.current}>
+  const Provider = import.meta.env.VITE_API_MODE === 'fixture' || sessionScene.current || location.pathname.startsWith('/preview') ? SessionProvider : LiveSessionProvider;
+  return <Provider key={sessionKey.current} scene={sessionScene.current}>
     <Routes>
       <Route path="/" element={<EntryPage />} />
       <Route path="/profile" element={<ProfilePage />} />
@@ -84,7 +86,7 @@ function AppSession() {
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
     <MatchDialog />
-  </SessionProvider>;
+  </Provider>;
 }
 
 export default function App() { return <AppSession />; }

@@ -316,3 +316,27 @@
   .my-profile-page .impression-card { margin-top: 24px; }
   .my-profile-actions { margin-top: 20px; text-align: center; }
 }
+
+.api-status { max-width: 402px; margin: 0 auto; padding: 5px 12px; font-size: 10px; text-align: center; background: #f0efff; color: #5745a3; }
+.api-error { max-width: 402px; margin: 0 auto; padding: 12px; color: #92233c; background: #fff0f3; font-size: 13px; }
+.api-app .impression-analysis { transform: none; }
+.api-app .impression-text { white-space: pre-line; font-size: 15px; font-weight: 500; line-height: 1.85; letter-spacing: -.2px; word-break: keep-all; overflow-wrap: anywhere; }
+.api-app .feed-impression { white-space: pre-line; font-weight: 500; line-height: 1.8; overflow-wrap: anywhere; }
+.api-app .feed-tags { flex-wrap: wrap; }
+.api-app .chat-room { height: calc(100dvh - 25px); min-height: calc(100dvh - 25px); }
+.api-app .interest-summary { font-size: 13px; font-weight: 500; line-height: 1.7; white-space: pre-line; }
+.api-app .message { overflow-wrap: anywhere; }
+
+.contact-settings { display: grid; gap: 12px; margin-top: 28px; padding: 22px; border: 1px solid var(--border, #e6e3e3); border-radius: 18px; }
+.contact-settings label { font-weight: 600; }
+.contact-settings input { width: 100%; min-width: 0; box-sizing: border-box; padding: 13px; border: 1px solid #d8d4d4; border-radius: 10px; font: inherit; }
+.contact-settings p { margin: 0; font-size: 13px; line-height: 1.6; color: #666; }
+.revealed-contact { margin-top: 20px; overflow-wrap: anywhere; }
+.revealed-contact > p { font-size: 20px; font-weight: 600; }
+.device-data-note { border-top: 1px solid var(--line, #e6e3e3); padding-top: 12px; color: #666; font-size: 12px; line-height: 1.55; }
+.device-data-note summary { cursor: pointer; color: var(--dark, #101114); font-weight: 700; }
+.device-data-note p { margin-top: 8px; }
+.reveal-progress { display: flex; gap: 6px; list-style: none; margin: 12px 0 0; padding: 0; }
+.reveal-progress li { flex: 1; border-radius: 8px; padding: 7px 5px; background: #fff; color: #74767d; font-size: 9px; font-weight: 700; line-height: 1.35; text-align: center; }
+.reveal-progress li.is-current { background: #5745a3; color: #fff; }
+.reveal-recovery { margin-top: 10px !important; color: #5745a3 !important; }

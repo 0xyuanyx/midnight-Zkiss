@@ -57,6 +57,7 @@ export function sessions(
           snsReveal: e.sns_reveal && revealReady,
           paidExtension: false,
         },
+        midnight: { network: e.midnight_network, contractAddress: e.midnight_contract_address, eventScope: e.midnight_event_scope },
         policyVersion: e.policy_version,
         mode: config.mode,
         aiMode: config.aiMode ?? config.mode,

@@ -7,6 +7,7 @@ import type {
   Verification,
 } from "../src/adapters/midnight.js";
 const admission = {
+  admissionNullifier: "11".repeat(32),
   purpose: "admission",
   devicePublicKey: Buffer.alloc(32, 1).toString("base64"),
   deviceKeyVersion: 1,

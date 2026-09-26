@@ -136,13 +136,13 @@ describe("zkiss contract", () => {
 
   // ---------------------------------------------------------------- admission
 
-  it("happy admission records nullifier, admittedLeaf and admissions[bindingHash]", () => {
+  it("happy admission records nullifier, admittedLeaf and admissions[admissionKey(bindingHash, nullifier)]", () => {
     const E = user("erin");
     sim.call(op, "issueTicket", pureCircuits.ticketLeaf(E.ticketSecret));
     const bh = rnd();
     const exp = BigInt(T0 + 120);
     admit(E, bh, exp);
-    expect(sim.l.admissions.lookup(bh)).toBe(exp);
+    expect(sim.l.admissions.lookup(pureCircuits.admissionKey(bh, pureCircuits.nullifierOf(SCOPE, E.ticketSecret)))).toBe(exp);
     expect(sim.l.nullifiers.member(pureCircuits.nullifierOf(SCOPE, E.ticketSecret))).toBe(true);
     expect(sim.l.admitted.findPathForLeaf(pureCircuits.admittedLeafOf(SCOPE, E.ticketSecret))).toBeDefined();
   });
@@ -177,11 +177,15 @@ describe("zkiss contract", () => {
     expect(sim.l.nullifiers.member(pureCircuits.nullifierOf(SCOPE, E.ticketSecret))).toBe(true);
   });
 
-  it("an admission bindingHash cannot be reused for another admission", () => {
-    const E = user("erin");
-    sim.call(op, "issueTicket", pureCircuits.ticketLeaf(E.ticketSecret));
-    const usedByAdmission = sim.l.admissions[Symbol.iterator]().next().value![0];
-    expect(() => admit(E, usedByAdmission)).toThrow(/bindingHash already used/);
+  it("H3: another valid ticket cannot preempt the expected admission key", () => {
+    const E = user("erin"), F = user("frank");
+    for (const u of [E, F]) sim.call(op, "issueTicket", pureCircuits.ticketLeaf(u.ticketSecret));
+    const victimBinding = rnd();
+    const victimKey = pureCircuits.admissionKey(victimBinding, pureCircuits.nullifierOf(SCOPE, E.ticketSecret));
+    admit(F, victimBinding);
+    expect(sim.l.admissions.member(victimKey)).toBe(false);
+    admit(E, victimBinding);
+    expect(sim.l.admissions.member(victimKey)).toBe(true);
   });
 
   it("a slot owner cannot reuse its own consent bindingHash", () => {
