@@ -57,11 +57,11 @@ function useSessionState(scene?: string) {
     join: async () => true, analyze: async () => true, publish: async () => true,
     sendMessage: async (id: string, text: string) => { updateConversation(id, current => ({ ...current, messages: [...current.messages, { id: crypto.randomUUID(), author: 'me', text }] })); return true; },
     markRead: (id: string) => updateConversation(id, current => ({ ...current, unreadCount: 0 })),
-    requestReveal: async (_id: string, _cancel = false) => false,
+    requestReveal: async (_id: string, _cancel: boolean | "reject" = false) => false,
     pendingMatch, dismissMatch: () => setPendingMatch(null), profile, setProfile, profileCreated, setProfileCreated, matched: matchedIds.length > 0, matchedIds, interests, sendInterest, conversations, updateConversation, scene };
 }
 
-export interface Conversation { messages: Message[]; consent: Consent; unreadCount: number; revealStatus?: string; peerSns?: string; canRequestReveal?: boolean; canSend?: boolean }
+export interface Conversation { messages: Message[]; consent: Consent; unreadCount: number; revealStatus?: string; peerAccepted?: boolean; revealApprovalFailed?: boolean; revealPreparationFailed?: boolean; peerSns?: string; canRequestReveal?: boolean; canSend?: boolean }
 export const emptyConversation: Conversation = { messages: [], consent: { mine: false, partner: false }, unreadCount: 0 };
 
 export type Session = ReturnType<typeof useSessionState>;

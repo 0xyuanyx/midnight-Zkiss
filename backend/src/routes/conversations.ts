@@ -1,4 +1,4 @@
-import { enqueueClose } from "../chain-context.js";
+import { enqueueClose, enqueue, roomChainContext, eventChain } from "../chain-context.js";
 import type { FastifyInstance } from "fastify";
 import type { Pool } from "pg";
 import { z } from "zod";
@@ -10,6 +10,7 @@ import {
   fail,
   id,
   checkVersion,
+  canonical,
   emit,
   limit,
   pagination,
@@ -84,6 +85,24 @@ export function conversations(
       ),
     ),
   );
+  route("PUT", E + "/:conversationId/chain-slot", async c => {
+    const r = await room(c, undefined, true);
+    need(c.event.sns_reveal && c.revealCapabilities.reveal && (r.origin !== 'question_reply' || c.revealCapabilities.anonymousReveal), 409, 'FEATURE_NOT_READY');
+    const { slot } = z.object({ slot: z.string().regex(/^[a-f0-9]{64}$/) }).strict().parse(c.request.body);
+    const context = roomChainContext(r, c.event);
+    need(!r.chain_event || canonical(r.chain_event) === canonical(eventChain(c.event)), 409, 'CHAIN_SCOPE_CHANGED');
+    need(!r.chain_slots[c.uid] || r.chain_slots[c.uid] === slot, 409, 'SLOT_CHANGED');
+    const peer = r.a === c.uid ? r.b : r.a;
+    need(r.chain_slots[peer] !== slot, 409, 'SLOTS_MUST_DIFFER');
+    const slots = { ...r.chain_slots, [c.uid]: slot };
+    const ready = Boolean(slots[r.a] && slots[r.b]);
+    const updated = (await one(c.db, `UPDATE conversations SET chain_room_id=$2,chain_event=$3,chain_slots=$4,
+      chain_preparation_status=CASE WHEN chain_preparation_status='open' THEN 'open' WHEN $5 THEN 'preparing' ELSE 'waiting' END
+      WHERE id=$1 RETURNING *`, [r.id, context.roomId, JSON.stringify(eventChain(c.event)), JSON.stringify(slots), ready]))!;
+    if (ready) await enqueue(c.db, c.event.id, 'open', r.id, config.mode, eventChain(c.event));
+    if (!r.chain_slots[c.uid]) for (const uid of [r.a,r.b]) await emit(c,uid,'conversation.preparation_changed',r.id,r.id,r.version);
+    return result(await conversation(c.db,updated,c.uid,c.revealCapabilities));
+  }, { phase: 'chat', freshResponse: true });
   route("GET", E + "/:conversationId/messages", async (c) => {
     const r = visibleStatus(c, await room(c));
     need(r.status === "active");

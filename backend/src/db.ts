@@ -42,6 +42,7 @@ export async function migrate(pool: Pool) {
       ["005", "005_midnight_v2.sql"],
       ["006", "006_profile_images.sql"],
       ["007", "007_sns_relay.sql"],
+      ["008", "008_room_preparation.sql"],
     ]) {
       if (
         !(await one(db, "SELECT version FROM migrations WHERE version=$1", [

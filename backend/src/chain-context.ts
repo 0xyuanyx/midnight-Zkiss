@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { Row, Db } from "./db.js";
 import type { EventChain } from "./adapters/midnight.js";
@@ -21,7 +22,7 @@ export function eventChain(e: Row): EventChain {
 export async function enqueue(
   db: Db,
   eventId: string,
-  kind: "ticket" | "terms" | "close",
+  kind: "ticket" | "terms" | "close" | "open",
   resourceId: string,
   mode: "real" | "demo",
   event: EventChain,
@@ -34,4 +35,9 @@ export async function enqueue(
 export async function enqueueClose(db: Db, r: Row, mode: "real" | "demo") {
   if (r.chain_room_id && r.chain_event)
     await enqueue(db, r.event_id, "close", r.id, mode, r.chain_event);
+}
+
+export function roomChainContext(c: Row, e: Row) {
+  const chain = c.chain_event ?? eventChain(e);
+  return { ...chain, roomId: c.chain_room_id ?? createHash('sha256').update(JSON.stringify([chain, c.id])).digest('hex') };
 }

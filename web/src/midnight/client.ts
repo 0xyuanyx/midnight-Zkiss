@@ -1,12 +1,12 @@
-import { readDevice, writeDevice } from './device-store';
+import { readDevice, writeDevice, participantSecret } from './device-store';
 import { ledger } from '../../../midnight/sns/managed/sns/contract/index.js';
 import { ContractState } from '@midnight-ntwrk/compact-runtime';
 import { pureCircuits } from '../../../midnight/sns/managed/sns/contract/index.js';
-import { newParticipant, setupRoom, roomMaterial, parseTerms, submitRevealApproval, type RoomSetup } from '../../../midnight/sns/device';
+import { newParticipant, slotFor, setupRoom, roomMaterial, parseTerms, submitRevealApproval, type RoomSetup } from '../../../midnight/sns/device';
 import { sealContact, openContact, type Envelope } from '../../../midnight/src/envelope';
 import { hexToBytes, decodeContact } from '../../../midnight/src/encoding';
 import type { ZkissPrivateState } from '../../../midnight/sns/witnesses';
-import { Api, ApiError, pause, type Reveal } from '../state/api';
+import { Api, ApiError, pause, type Reveal, type Room } from '../state/api';
 const unb64 = (s: string) => Uint8Array.from(atob(s), c => c.charCodeAt(0));
 interface Local { privateState: ZkissPrivateState; setup: RoomSetup; intent?: any; transaction?: string; submitted?: boolean }
 const read = (key: string) => readDevice<Local>(key);
@@ -16,26 +16,23 @@ async function local(uid: string, r: Reveal) { const v = await read(localKey(uid
 export async function material(uid: string, r: Reveal, sns: string) {
   const key = localKey(uid, r); let value = await read(key);
   if (!value) {
-    const secretKey = `zkiss.sns-device.v1:${uid}`;
     const participant = newParticipant();
-    const stored = sessionStorage.getItem(secretKey);
-    if (stored) participant.participantSecret = unb64(stored);
-    else sessionStorage.setItem(secretKey, btoa(String.fromCharCode(...participant.participantSecret)));
+    participant.participantSecret = await participantSecret(uid);
     const [privateState, setup] = await setupRoom(participant, hexToBytes(r.chainRoomId, 32), sns);
     value = { privateState, setup }; await write(key, value);
+    value = (await read(key))!;
   }
   return roomMaterial(value.privateState, hexToBytes(r.eventScope!, 32), hexToBytes(r.chainRoomId, 32), value.setup);
 }
-function prove(data: unknown): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const worker = new Worker(new URL('./proof.worker.ts', import.meta.url), { type: 'module' });
-    const timer = setTimeout(() => { worker.terminate(); reject(new ApiError('PROOF_TIMEOUT')); }, 8 * 60000);
-    const finish = () => { clearTimeout(timer); worker.terminate(); };
-    worker.onmessage = ({ data }) => { if (data.stage) return; finish(); data.error ? reject(new ApiError('PROOF_FAILED')) : resolve(data.transaction); };
-    worker.onerror = () => { finish(); reject(new ApiError('PROOF_FAILED')); };
-    worker.postMessage(data);
-  });
+export async function prepareRoom(api: Api, uid: string, room: Room) {
+  const c=room.chainPreparation;if(!c)return;
+  const state=newParticipant();state.participantSecret=await participantSecret(uid);
+  const slot=Array.from(slotFor(state,hexToBytes(c.eventScope,32),hexToBytes(c.roomId,32)),b=>b.toString(16).padStart(2,'0')).join('');
+  if(c.mySlot && c.mySlot!==slot) throw new ApiError('SLOT_CHANGED');
+  if(!c.mySlot || c.status==='waiting') await api.event(`/conversations/${room.id}/chain-slot`,'PUT',{slot});
 }
+export { warmProof } from './proof-runtime';
+import { prove } from './proof-runtime';
 export async function approve(api: Api, uid: string, r: Reveal) {
   const value = await local(uid, r); const key = localKey(uid, r);
 

@@ -1,7 +1,7 @@
 export interface ApiProfile { id: string; version: number; status?: string; nickname?: string; age?: number; gender?: string; mbti?: string; intro?: string; introduction?: string; tags?: string[]; imageUrl?: string | null }
 export interface Me { mode: 'demo' | 'real'; participantId: string; eventId: string; csrfToken: string; admissionStatus: string; devicePublicKey?: string | null; ticket: { leaf: string | null; status: string | null }; profile: ApiProfile; contact: { version: number; configured: boolean; keyVersion: number } }
 export interface EventInfo { id: string; name: string; mode: 'demo' | 'real'; aiMode: 'demo' | 'real'; aiReady: boolean; participantCount: number; features: { snsReveal: boolean } }
-export interface Room { id: string; version: number; status: string; peer: { profile?: ApiProfile }; unreadCount: number; lastSequence: number; revealRequestId: string | null; allowedActions: string[] }
+export interface Room { chainPreparation?: { roomId: string; network: string; contractAddress: string; eventScope: string; status: string; mySlot: string | null } | null; id: string; version: number; status: string; peer: { profile?: ApiProfile }; unreadCount: number; lastSequence: number; revealRequestId: string | null; allowedActions: string[] }
 export interface ApiMessage { id: string; sequence: number; sender: 'self' | 'peer'; text: string }
 export interface Reveal { mySlotIndex: 0 | 1; chainRoomId: string; eventScope: string | null; contractAddress: string | null; network: string | null; terms: string | null; id: string; version: number; status: string; myDecision: string; peerDecision: string; transcriptHash: string | null; myMaterialReady: boolean; myEnvelopeReady: boolean; peerEncryptionKey: { publicKey: string; version: number } | null }
 export class ApiError extends Error { constructor(public code: string, public status = 0) { super(code); } }
@@ -43,7 +43,11 @@ export function errorMessage(error: unknown) {
     SESSION_REQUIRED: '행사 입장이 필요해요.', SESSION_EXPIRED: '세션이 만료됐어요. 다시 입장해 주세요.',
     EVENT_CLOSED: '행사 이용 시간이 종료됐어요.', VERSION_CONFLICT: '정보가 변경됐어요. 새로고침 후 다시 시도해 주세요.',
     AI_QUOTA_EXCEEDED: '이미지 생성 서비스를 잠시 이용할 수 없어요. 운영자에게 알려 주세요.',
+    SNS_KEY_PREPARATION_FAILED: '이 브라우저에서 공개 정보를 준비하지 못했어요. 새로고침 후 다시 시도해 주세요.',
+    SLOT_CHANGED: '처음 공개를 요청했던 탭의 정보가 필요해요. 원래 탭에서 다시 시도해 주세요.',
+    MATERIAL_CHANGED: '공개 정보가 다른 탭에서 변경됐어요. 처음 요청했던 탭에서 다시 시도해 주세요.',
     SNS_APPROVAL_FAILED: 'SNS 공개를 완료하지 못했어요. 운영자에게 알려 주세요.',
+    PROOF_ASSET_UNAVAILABLE: '공개 준비 파일을 불러오지 못했어요. 연결을 확인하고 공개 준비 다시 시도를 눌러 주세요.',
     PROOF_FAILED: '공개 준비를 완료하지 못했어요. 잠시 후 다시 시도해 주세요.',
     PROOF_TIMEOUT: '공개 준비가 지연되고 있어요. 잠시 후 다시 시도해 주세요.',
     AI_IMAGE_REQUIRED: '프로필 이미지를 만들지 못했어요. 다시 시도해 주세요.',

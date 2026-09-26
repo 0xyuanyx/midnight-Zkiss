@@ -22,12 +22,16 @@ export async function processRelayJobs(pool: Pool, operator: MidnightOperator) {
         const r = (await pool.query("SELECT status FROM reveal_requests WHERE id=$1", [j.reveal_request_id])).rows[0];
         if (r?.status !== 'awaiting_chain') throw new Error('REVEAL_NOT_READY');
         if (!j.balanced_transaction) {
+          const started=Date.now();
           const prepared = await operator.prepareRelay(j.proven_transaction, j.prepared);
           await pool.query("UPDATE sns_relay_jobs SET balanced_transaction=$2,transaction_id=$3,status='prepared' WHERE intent_id=$1", [j.intent_id, prepared.transaction, prepared.transactionId]);
+          console.log(JSON.stringify({metric:'sns.relay_prepare',durationMs:Date.now()-started}));
           j.balanced_transaction = prepared.transaction; j.transaction_id = prepared.transactionId;
         }
         await pool.query("UPDATE operations SET transaction_id=$2,status='submitted',updated_at=now() WHERE intent_id=$1 AND transaction_id IS NULL", [j.intent_id, j.transaction_id]);
+        const submittedAt=Date.now();
         await operator.submitRelay(j.balanced_transaction);
+        console.log(JSON.stringify({metric:'sns.relay_submit',durationMs:Date.now()-submittedAt}));
         await pool.query("UPDATE sns_relay_jobs SET status='submitted' WHERE intent_id=$1", [j.intent_id]);
       } catch (error) {
         // A broadcast timeout is ambiguous: keep prepared bytes and let readback/retry resolve it.

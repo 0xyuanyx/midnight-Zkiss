@@ -1,3 +1,5 @@
+import { decideReveal } from './reveal-decision';
+import { watchSession } from './stream';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { Api, ApiError, errorMessage, pause, type ApiProfile, type ApiMessage, type Me, type Room, type EventInfo, type Reveal } from './api';
@@ -33,7 +35,19 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
   const refreshLock = useRef<Promise<void> | null>(null);
   const approval = useRef(new Set<string>());
   const proving = useRef(new Set<string>());
+  const approvalFailures = useRef(new Set<string>());
   const alive = useRef(true);
+  const streamConnected = useRef(false);
+  const preparingRooms = useRef(new Set<string>());
+  const scheduledRefresh = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const queueRefresh = () => {
+    if(scheduledRefresh.current)return;
+    scheduledRefresh.current=setTimeout(()=>{
+      scheduledRefresh.current=undefined;
+      if(locked.current || refreshLock.current){queueRefresh();return;}
+      void refresh(['/home','/likes'].includes(pathname.current)).catch(e=>setError(errorMessage(e)));
+    },100);
+  };
   const adopt = useCallback((value: Me, hydrate = false) => {
     me.current = value; api.csrf = value.csrfToken; api.eventId = value.eventId;
     setProfileCreated(Boolean(value.profile.intro));
@@ -65,7 +79,12 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
         if (!local.contact) throw new ApiError('KEYS_MISSING');
         const sns = await decrypt(local.contact, local, local.contact.contextHash);
         const client = await import('../midnight/client');
-        r = await api.event<Reveal>(`/reveal-requests/${r.id}/room-material`, 'PUT', await client.material(me.current!.participantId, r, sns));
+        try {
+          r = await api.event<Reveal>(`/reveal-requests/${r.id}/room-material`, 'PUT', await client.material(me.current!.participantId, r, sns));
+        } catch (e) {
+          setError(errorMessage(e instanceof ApiError ? e : new ApiError('SNS_KEY_PREPARATION_FAILED')));
+          return { consent: { mine: r.myDecision === 'accepted', partner: false }, revealStatus: r.status, peerAccepted: r.peerDecision === 'accepted', revealPreparationFailed: true };
+        }
       } else {
       const roomKey = await identity(`${me.current!.participantId}:${r.id}`, true);
       r = await api.event<Reveal>(`/reveal-requests/${r.id}/room-material`, 'PUT', { slot: await digest(local.salt + room.id), roomPublicKey: roomKey.publicKey, keyCommit: await digest(roomKey.publicKey), contactCommit: local.commitment });
@@ -73,12 +92,12 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
     }
     if (r.status === 'awaiting_chain' && r.myDecision === 'accepted' && !approval.current.has(r.id)) {
       if (me.current!.mode === 'real') {
-        if (!proving.current.has(r.id)) {
+        if (!proving.current.has(r.id) && !approvalFailures.current.has(r.id)) {
           proving.current.add(r.id);
           const snapshot = r;
-          void import('../midnight/client').then(client => client.approve(api, me.current!.participantId, snapshot)).then(() => approval.current.add(snapshot.id)).catch(e => { setError(errorMessage(e)); });
+          void import('../midnight/client').then(client => client.approve(api, me.current!.participantId, snapshot)).then(() => approval.current.add(snapshot.id)).catch(e => { approvalFailures.current.add(snapshot.id); setError(errorMessage(e)); }).finally(() => {proving.current.delete(snapshot.id);queueRefresh();});
         }
-        return { consent: { mine: true, partner: false }, revealStatus: 'awaiting_chain' };
+        return { consent: { mine: true, partner: false }, peerAccepted: true, revealStatus: 'awaiting_chain', revealApprovalFailed: approvalFailures.current.has(r.id) };
       }
       await chain('reveal_approval', { revealRequestId: r.id, transcriptHash: r.transcriptHash });
       approval.current.add(r.id);
@@ -94,7 +113,7 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
       const envelope = await api.event<Envelope>(`/reveal-requests/${r.id}/peer-envelope`);
       peerSns = me.current!.mode === 'real' ? await (await import('../midnight/client')).open(me.current!.participantId, r, envelope) : await decrypt(envelope, await identity(`${me.current!.participantId}:${r.id}`), r.transcriptHash!);
     }
-    const result = { consent: { mine: r.myDecision === 'accepted', partner: r.status === 'released' && Boolean(peerSns) }, revealStatus: r.status, peerSns };
+    const result = { consent: { mine: r.myDecision === 'accepted', partner: r.status === 'released' && Boolean(peerSns) }, revealStatus: r.status, peerAccepted: r.peerDecision === 'accepted', peerSns };
     if (r.status === 'released') revealCache.current.set(r.id, result);
     return result;
   }
@@ -111,6 +130,10 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
       const active = list.filter(r => r.status === 'active' && r.peer.profile);
       const next: Record<string, Conversation> = {};
       for (const room of active) {
+        if(me.current?.mode==='real' && room.chainPreparation && !preparingRooms.current.has(room.id)) {
+          preparingRooms.current.add(room.id);
+          void import('../midnight/client').then(client=>client.prepareRoom(api,me.current!.participantId,room)).catch(e=>setError(errorMessage(e))).finally(()=>preparingRooms.current.delete(room.id));
+        }
         const messages: ApiMessage[] = []; let sequence = 0; let more = true;
         while (more) {
           const page = await api.event<{ items: ApiMessage[]; nextAfterSequence: number; hasMore: boolean }>(`/conversations/${room.id}/messages?limit=100&afterSequence=${sequence}`);
@@ -142,9 +165,20 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
       catch (e) { if (!(e instanceof ApiError && e.status === 401)) setError(errorMessage(e)); }
       finally { if (alive.current) setLoading(false); }
     })();
-    const timer = setInterval(() => { if ((!document.hidden || rooms.current.some(room => room.revealRequestId)) && !locked.current) void refresh(['/home', '/likes'].includes(pathname.current)).catch(e => setError(errorMessage(e))); }, 5000);
-    return () => { alive.current = false; clearInterval(timer); };
+    const timer = setInterval(() => { if ((!streamConnected.current || ['/home','/likes'].includes(pathname.current)) && (!document.hidden || rooms.current.some(room => room.revealRequestId)) && !locked.current) void refresh(['/home', '/likes'].includes(pathname.current)).catch(e => setError(errorMessage(e))); }, 5000);
+    return () => { alive.current = false; clearInterval(timer); clearTimeout(scheduledRefresh.current); };
   }, [api, adopt, refresh]);
+  useEffect(()=>{
+    if(!api.eventId || me.current?.admissionStatus!=='active')return;
+    const stop=watchSession(api.eventId,queueRefresh,value=>{streamConnected.current=value;});
+    const visible=()=>{if(!document.hidden)queueRefresh();};
+    document.addEventListener('visibilitychange',visible);
+    return ()=>{stop();document.removeEventListener('visibilitychange',visible);};
+  },[api,event?.id]);
+  useEffect(()=>{
+    if(me.current?.mode==='real' && /^\/chats\/[^/]+/.test(location.pathname) && !location.pathname.endsWith('/matched'))
+      void import('../midnight/client').then(client=>client.warmProof()).catch(()=>{});
+  },[location.pathname,loading]);
   const join = () => run(async () => {
     if (!me.current) {
       const key = await identity('pending', true);
@@ -200,13 +234,19 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
     }),
     markRead: id => { const room = roomFor(id); if (reading.current.has(id)) return; reading.current.add(id); void api.event(`/conversations/${room.id}/read`, 'PUT', { throughSequence: room.lastSequence }).then(() => setConversations(current => ({ ...current, [id]: { ...current[id], unreadCount: 0 } }))).catch(e => setError(errorMessage(e))).finally(() => reading.current.delete(id)); },
     updateConversation: () => {},
-    requestReveal: (id, cancel = false) => run(async () => {
+    requestReveal: (id, cancel: boolean | "reject" = false) => run(async () => {
       const room = roomFor(id);
       let r = room.revealRequestId ? await api.event<Reveal>(`/reveal-requests/${room.revealRequestId}`) : null;
+      if (!cancel && r?.status === 'collecting' && r.myDecision === 'accepted') { await refresh(); return; }
+      if (!cancel && r?.status === 'awaiting_chain' && r.myDecision === 'accepted') {
+        approvalFailures.current.delete(r.id);
+        await refresh();
+        return;
+      }
       if (!r || ['cancelled', 'rejected', 'expired'].includes(r.status)) {
         await api.event(`/conversations/${room.id}/reveal-requests`, 'POST', { expectedVersion: room.version, ownContactVersion: me.current!.contact.version, consent: true });
       } else {
-        await api.event(`/reveal-requests/${r.id}/decisions`, 'POST', { expectedVersion: r.version, transcriptHash: r.transcriptHash, action: cancel ? 'cancel' : 'accept' });
+        await decideReveal(api, r, cancel === 'reject' ? 'reject' : cancel ? 'cancel' : 'accept');
       }
       await refresh();
     }),

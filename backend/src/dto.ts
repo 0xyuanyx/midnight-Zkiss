@@ -1,3 +1,4 @@
+import { roomChainContext } from "./chain-context.js";
 import type { Row, Db } from "./db.js";
 import { one } from "./db.js";
 function imageUrl(p: Row, imageId?: string) {
@@ -104,6 +105,10 @@ export async function conversation(
     chatUntil: event.chat_until,
     freeUntil: null,
     revealRequestId: request?.id ?? null,
+    chainPreparation: canReveal && event.midnight_contract_address ? {
+      ...roomChainContext(r, event), status: r.chain_preparation_status ?? 'waiting',
+      mySlot: r.chain_slots?.[uid] ?? null,
+    } : null,
     allowedActions:
       r.status === "active"
         ? [

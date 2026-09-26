@@ -1,3 +1,4 @@
+import { one } from "./db.js";
 import Fastify from "fastify";
 import cookie from "@fastify/cookie";
 import multipart from "@fastify/multipart";
@@ -5,7 +6,7 @@ import rateLimit from "@fastify/rate-limit";
 import { ZodError } from "zod";
 import type { Pool } from "pg";
 import type { Config } from "./config.js";
-import { ApiError, envelope, fail } from "./http.js";
+import { ApiError, envelope, fail, hash } from "./http.js";
 import { sessions } from "./routes/sessions.js";
 import { profileImages } from "./routes/profile-images.js";
 import { profiles } from "./routes/profiles.js";
@@ -33,7 +34,17 @@ export async function buildApp(options: {
   await app.register(multipart, {
     limits: { fileSize: 5 * 1024 * 1024, files: 1, fields: 2, parts: 3 },
   });
-  await app.register(rateLimit, { max: 300, timeWindow: "1 minute", allowList: (req) => !req.url.startsWith("/api/") });
+  await app.register(rateLimit, { max: 300, timeWindow: "1 minute", allowList: (req) => !req.url.startsWith("/api/"),
+    keyGenerator: async req => {
+      // Vercel proxy clients share a source IP. Only verified sessions get a user bucket.
+      if(req.method === 'POST' && req.url.split('?')[0] === '/api/v1/sessions') return req.ip;
+      const token=req.cookies[options.config.mode === 'real' ? '__Host-zkiss_session' : 'zkiss_session'];
+      if(token && /^[A-Za-z0-9_-]{43}$/.test(token)) {
+        const session=await one(options.pool,'SELECT participant_id FROM sessions WHERE token_hash=$1 AND expires_at>now()',[hash(token)]);
+        if(session)return `participant:${session.participant_id}`;
+      }
+      return req.ip;
+    } });
   app.addHook("onRequest", async (req) => {
     if (["GET", "HEAD", "OPTIONS"].includes(req.method)) return;
     const origin = req.headers.origin;

@@ -1,16 +1,10 @@
 const bytes = (s: string) => Uint8Array.from(atob(s), c => c.charCodeAt(0));
 const b64 = (b: Uint8Array) => { let s = ''; for (const n of b) s += String.fromCharCode(n); return btoa(s); };
-const assets = new Map<string, Promise<Uint8Array>>();
-const fetchAsset = async (path: string) => {
-  self.postMessage({ stage: `asset:${path}` });
-  const r = await fetch(`/zk/sns/${path}`); if (!r.ok) throw new Error('PROVING_ASSET_MISSING');
-  return new Uint8Array(await r.arrayBuffer());
-};
-const asset = (path: string) => { let promise = assets.get(path); if (!promise) { promise = fetchAsset(path); assets.set(path, promise); } return promise; };
+import { createProofAssetLoader } from './proof-assets';
+const asset = createProofAssetLoader(path => self.postMessage({ stage: `asset:${path}` }));
 const zk = { getProverKey: (c: string) => asset(`keys/${c}.prover`), getVerifierKey: (c: string) => asset(`keys/${c}.verifier`), getZKIR: (c: string) => asset(`zkir/${c}.bzkir`) };
-self.onmessage = async ({ data }) => {
-  try {
-    if (data.intent.protocolVersion !== 'zkiss-sns-v1') throw new Error('PROTOCOL_MISMATCH');
+let ready: Promise<any> | undefined;
+const initialize = () => ready ??= (async () => {
     await import('./browser-polyfills');
     self.postMessage({ stage: 'loading-sdk' });
     const { CompiledContract } = await import('@midnight-ntwrk/compact-js');
@@ -26,6 +20,16 @@ self.onmessage = async ({ data }) => {
     const { witnesses } = await import('../../../midnight/sns/witnesses');
     const { decodePayload, fromBase64Url } = await import('../../../midnight/src/encoding');
     const { parseTerms } = await import('../../../midnight/sns/device');
+    await Promise.all([zk.getProverKey('approveReveal'), zk.getVerifierKey('approveReveal'), zk.getZKIR('approveReveal'), asset('params/bls_midnight_2p16')]);
+    return {CompiledContract,createUnprovenCallTxFromInitialStates,setNetworkId,ledger,compactRuntime,provingProvider,Contract,witnesses,decodePayload,fromBase64Url,parseTerms};
+})().catch(e=>{ready=undefined;throw e;});
+self.onmessage = async ({ data }) => {
+  try {
+    const start=performance.now();
+    const {CompiledContract,createUnprovenCallTxFromInitialStates,setNetworkId,ledger,compactRuntime,provingProvider,Contract,witnesses,decodePayload,fromBase64Url,parseTerms}=await initialize();
+    self.postMessage({metric:'initialization',durationMs:performance.now()-start});
+    if(data.type==='warm') {self.postMessage({warmed:true});return;}
+    if (data.intent.protocolVersion !== 'zkiss-sns-v1') throw new Error('PROTOCOL_MISMATCH');
     self.postMessage({ stage: 'constructing' });
     setNetworkId(data.network);
     const payload = decodePayload(fromBase64Url(data.intent.publicPayload));
@@ -47,7 +51,9 @@ self.onmessage = async ({ data }) => {
       getParams: (k: number) => asset(`params/bls_midnight_2p${k}`),
     });
     self.postMessage({ stage: 'proving' });
+    const proofStart=performance.now();
     const proven = await call.private.unprovenTx.prove(prover, ledger.CostModel.initialCostModel());
+    self.postMessage({metric:"proving",durationMs:performance.now()-proofStart});
     // Only proven public transaction bytes leave this worker. Never post call/private/witness data.
     self.postMessage({ transaction: b64(proven.serialize()) });
   } catch (e) { self.postMessage({ error: e instanceof Error ? e.message : 'PROOF_FAILED' }); }

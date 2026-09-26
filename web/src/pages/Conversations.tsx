@@ -70,17 +70,28 @@ function SharedPanel({ peerId }: { peerId: string }) {
   </section>;
 }
 
-function RequestPanel({ peerId }: { peerId: string }) {
-  const { conversations, updateConversation, scene, requestReveal, busy } = useSession();
+export function RequestPanel({ peerId }: { peerId: string }) {
+  const { conversations, updateConversation, scene, requestReveal, busy, profile } = useSession();
   const { consent } = conversations[peerId] ?? emptyConversation;
   if (!scene) {
     const c = conversations[peerId];
     if (!c?.canRequestReveal) return null;
-    const active = ['collecting', 'requested', 'awaiting_chain', 'authorized'].includes(c.revealStatus ?? '');
+    const active = ['collecting','requested','awaiting_chain','authorized'].includes(c.revealStatus ?? '');
+    const incoming = active && !consent.mine && c.peerAccepted !== false;
+    const both = consent.mine && c.peerAccepted;
+    const failed = c.revealApprovalFailed || c.revealPreparationFailed;
     return <section className="request-panel" aria-live="polite"><h2>SNS 상호 공개</h2>
-      <p>{['awaiting_chain', 'authorized'].includes(c.revealStatus ?? '') ? '서로의 SNS를 공개할 준비를 하고 있어요.' : c.revealStatus === 'collecting' ? '공개 요청을 준비하고 있어요.' : consent.mine ? '상대방의 동의를 기다리고 있어요.' : '두 사람 모두 동의하면 SNS를 확인할 수 있어요.'}</p>
-      {!consent.mine && <Button disabled={busy || (active && c.revealStatus !== 'requested')} onClick={() => void requestReveal(peerId)}>{c.revealStatus === 'requested' ? 'SNS 공개 동의하기' : 'SNS 공개 요청하기'}</Button>}
-      {active && <Button variant="outline" disabled={busy} onClick={() => void requestReveal(peerId, true)}>공개 요청 취소하기</Button>}
+      <p>{incoming ? `상대방이 SNS 공개에 동의했어요! ${profile.nickname || '회원'}님도 공개에 동의하면 서로의 SNS를 확인할 수 있어요.`
+        : failed ? '공개 준비가 중단됐어요. 연결을 확인한 뒤 다시 시도해 주세요.'
+        : both ? '서로 공개에 동의했어요. 안전하게 확인하고 있으니 잠시 이 화면을 유지해 주세요.'
+        : consent.mine && active ? '공개에 동의했어요. 상대방이 동의하면 서로의 SNS를 확인할 수 있어요.'
+        : c.revealStatus === 'rejected' ? '이번 공개 요청은 종료됐어요. 대화는 계속할 수 있어요.'
+        : '두 사람 모두 동의하면 SNS를 확인할 수 있어요.'}</p>
+      {incoming ? <div className="reveal-actions"><Button disabled={busy} onClick={()=>void requestReveal(peerId)}>공개 동의</Button><Button variant="outline" disabled={busy} onClick={()=>void requestReveal(peerId,'reject')}>공개 거절</Button></div>
+        : failed ? <Button disabled={busy} onClick={()=>void requestReveal(peerId)}>공개 준비 다시 시도</Button>
+        : both ? <ol className="reveal-progress" aria-label="SNS 공개 진행"><li aria-current={c.revealStatus==='collecting'?'step':undefined}>공개 정보 준비</li><li aria-current={['awaiting_chain','authorized'].includes(c.revealStatus??'')?'step':undefined}>안전하게 확인 중</li><li>공개 완료</li></ol>
+        : consent.mine && active ? <Button variant="outline" disabled={busy} onClick={()=>void requestReveal(peerId,true)}>공개 요청 취소하기</Button>
+        : <Button disabled={busy} onClick={()=>void requestReveal(peerId)}>SNS 공개 동의하기</Button>}
     </section>;
   }
   return <section className="request-panel" aria-live="polite">

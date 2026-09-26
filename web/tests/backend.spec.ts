@@ -5,19 +5,56 @@ test('두 사용자가 실제 API로 프로필·호감·대화·SNS 상호 공�
   test.skip(process.env.ZKISS_LIVE_E2E !== '1', 'Local demo API, database and worker required');
   const actualChain = process.env.ZKISS_REAL_SNS === '1';
   test.setTimeout(actualChain ? 900_000 : 150_000);
-  const aContext = await browser.newContext({ baseURL: testInfo.project.use.baseURL, ignoreHTTPSErrors: !process.env.WEB_TEST_BASE_URL });
-  const bContext = await browser.newContext({ baseURL: testInfo.project.use.baseURL, ignoreHTTPSErrors: !process.env.WEB_TEST_BASE_URL });
+  const contextOptions = { baseURL: testInfo.project.use.baseURL, ignoreHTTPSErrors: !process.env.WEB_TEST_BASE_URL,
+    viewport: testInfo.project.use.viewport, isMobile: testInfo.project.use.isMobile, hasTouch: testInfo.project.use.hasTouch };
+  const aContext = await browser.newContext(contextOptions);
+  const bContext = await browser.newContext(contextOptions);
   const a = await aContext.newPage();
   const b = await bContext.newPage();
   const suffix = Date.now().toString().slice(-7);
   const nameA = `가${suffix}`, nameB = `나${suffix}`;
+  console.log('SNS_TEST_PROFILES', nameA, nameB);
   const errors: string[] = [];
   const leaked: string[] = [];
   const admissionRequests: string[] = [];
   const relayBytes: Buffer[] = [];
   for (const page of [a, b]) {
+    if (process.env.ZKISS_NO_NATIVE_X25519 === '1') {
+      await page.addInitScript(() => {
+        for (const method of ['generateKey', 'importKey', 'deriveBits'] as const) {
+          const original = (crypto.subtle[method] as Function).bind(crypto.subtle);
+          Object.defineProperty(crypto.subtle, method, { configurable: true, value: (...args: any[]) => {
+            const algorithm = args[method === 'importKey' ? 2 : 0];
+            if ((typeof algorithm === 'string' ? algorithm : algorithm?.name) === 'X25519') return Promise.reject(new DOMException('Unsupported X25519', 'NotSupportedError'));
+            return original(...args);
+          } });
+        }
+      });
+    }
     await page.addInitScript(() => { Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (text: string) => { (window as unknown as { copied: string }).copied = text; } } }); });
     if (actualChain) {
+      if (process.env.ZKISS_TEST_PROOF_RECOVERY === '1') {
+        await page.addInitScript(() => {
+          const NativeWorker = window.Worker;
+          let failed = false;
+          window.Worker = class extends NativeWorker {
+            postMessage(data: any, options?: any) {
+              if (!failed) {
+                failed = true;
+                queueMicrotask(() => this.dispatchEvent(new MessageEvent('message', { data: { error: 'PROOF_ASSET_UNAVAILABLE' } })));
+                return;
+              }
+              super.postMessage(data, options);
+            }
+          };
+        });
+        // First asset response fails too: the real Worker must retry without dropping approval.
+        let interrupted = false;
+        await page.route('**/zk/sns/keys/approveReveal.prover', async route => {
+          if (!interrupted) { interrupted = true; await route.fulfill({ status: 503, body: 'temporary test failure' }); }
+          else await route.continue();
+        });
+      }
       await page.addInitScript(() => {
         const NativeWorker = window.Worker;
         window.Worker = class extends NativeWorker {
@@ -69,16 +106,39 @@ test('두 사용자가 실제 API로 프로필·호감·대화·SNS 상호 공�
       await expect(sender.getByRole('textbox', { name: '메시지', exact: true })).toHaveValue('');
     }
     await expect(a.getByRole('log')).toContainText('안녕하세요 3', { timeout: 15000 });
-    await a.getByRole('button', { name: 'SNS 공개 요청하기' }).click();
+    if(process.env.ZKISS_WAIT_ROOM==='1'){
+      await expect.poll(async()=>a.evaluate(async()=>{
+        const me=(await (await fetch('/api/v1/me')).json()).data;
+        const list=(await (await fetch(`/api/v1/events/${me.eventId}/conversations`)).json()).data.items;
+        return list.some((r:any)=>r.chainPreparation?.status==='open');
+      }),{timeout:180000}).toBe(true);
+      console.log('SNS_PREOPEN_CONFIRMED');
+    }
+    if(process.env.ZKISS_TEST_REJECT==='1'){
+      await a.getByRole('button',{name:'SNS 공개 동의하기',exact:true}).click();
+      await b.getByRole('button',{name:'공개 거절',exact:true}).click();
+      await expect(a.getByText('이번 공개 요청은 종료됐어요. 대화는 계속할 수 있어요.')).toBeVisible();
+    }
+    const revealStart=Date.now();
+    await a.getByRole('button', { name: process.env.ZKISS_BASELINE_UI ? 'SNS 공개 요청하기' : 'SNS 공개 동의하기' }).click();
     await expect(a.getByRole('heading', { name: '서로 동의했어요' })).toHaveCount(0);
     await b.bringToFront();
-    await expect(b.getByRole('button', { name: 'SNS 공개 동의하기' })).toBeEnabled({ timeout: actualChain ? 180000 : 25000 });
-    await b.getByRole('button', { name: 'SNS 공개 동의하기' }).click();
+    await expect(b.getByRole('button', { name: process.env.ZKISS_BASELINE_UI ? 'SNS 공개 동의하기' : '공개 동의', exact: true })).toBeEnabled({ timeout: actualChain ? 180000 : 25000 });
+    console.log('SNS_TIMING request_to_consent_ms',Date.now()-revealStart);
+    await b.getByRole('button', { name: process.env.ZKISS_BASELINE_UI ? 'SNS 공개 동의하기' : '공개 동의', exact: true }).click();
+    const consentAt=Date.now();
+    if (process.env.ZKISS_TEST_PROOF_RECOVERY === '1') {
+      for (const page of [a, b]) {
+        await expect(page.getByRole('button', { name: '공개 준비 다시 시도' })).toBeVisible({ timeout: 30000 });
+        await page.getByRole('button', { name: '공개 준비 다시 시도' }).click();
+      }
+    }
     await expect.poll(async () => {
       for (const page of [a,b]) { const alert = page.getByRole('alert'); if (await alert.count()) throw new Error(await alert.innerText()); }
       return a.getByRole('heading', { name: '서로 동의했어요' }).isVisible();
     }, { timeout: actualChain ? 600000 : 30000, intervals: [1000,2500] }).toBe(true);
     await expect(b.getByRole('heading', { name: '서로 동의했어요' })).toBeVisible({ timeout: actualChain ? 600000 : 30000 });
+    console.log('SNS_TIMING consent_to_release_ms',Date.now()-consentAt);
     await a.getByRole('button', { name: `${nameB} SNS ID 복사` }).click();
     await expect(a.getByRole('status')).toContainText('@secret-b');
     expect(await a.evaluate(() => (window as unknown as { copied: string }).copied)).toBe('@secret-b');
@@ -96,7 +156,13 @@ test('두 사용자가 실제 API로 프로필·호감·대화·SNS 상호 공�
     if (actualChain) {
       await a.screenshot({ path: testInfo.outputPath('sns-shared.png'), fullPage: true });
       expect(relayBytes.length).toBeGreaterThanOrEqual(2);
-      const secrets = await Promise.all([a, b].map(page => page.evaluate(() => Object.keys(sessionStorage).filter(k => k.startsWith('zkiss.sns-device.v1:')).map(k => sessionStorage.getItem(k)!))));
+      const secrets = await Promise.all([a, b].map(page => page.evaluate(async () => {
+        const db=await new Promise<IDBDatabase>((resolve,reject)=>{const r=indexedDB.open('zkiss-sns-v1',1);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
+        const records=await new Promise<any[]>((resolve,reject)=>{const r=db.transaction('rooms').objectStore('rooms').getAll();r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});db.close();
+        const values:string[]=[];
+        for(const r of records) if(r.version===4){const bytes=new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:r.iv},r.wrappingKey,r.sealed));values.push(btoa(String.fromCharCode(...bytes)));bytes.fill(0);}
+        return [...values,...Object.keys(sessionStorage).filter(k=>k.startsWith('zkiss.sns-device.v1:')).map(k=>sessionStorage.getItem(k)!)];
+      })));
       for (const raw of relayBytes) {
         for (const contact of ['@secret-a', '@secret-b']) expect(raw.includes(Buffer.from(contact))).toBe(false);
         for (const secret of secrets.flat()) expect(raw.includes(Buffer.from(secret, 'base64'))).toBe(false);

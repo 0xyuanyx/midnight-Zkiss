@@ -91,12 +91,11 @@ export const createOperatorRuntime = (o: OperatorOptions) => {
   const operator: MidnightOperator = {
     mode: 'real',
     issueTicket: async () => { throw new Error('ADMISSION_DISABLED'); },
-    openRoom: (e, r) =>
-      queue(async () =>
-        txId(
-          await (await handle(e)).callTx.openRoom(hexToBytes(r.roomId, 32), hexToBytes(r.slotA, 32), hexToBytes(r.slotB, 32), isoToSeconds(r.expiresAt)),
-        ),
-      ),
+    openRoom: (e, r) => queue(async () => {
+      const eventEnd=(await state(e)).eventEnd;
+      const requested=isoToSeconds(r.expiresAt);
+      return txId(await (await handle(e)).callTx.openRoom(hexToBytes(r.roomId,32),hexToBytes(r.slotA,32),hexToBytes(r.slotB,32),requested < eventEnd ? requested : eventEnd));
+    }),
     closeRoom: (e, roomId) => queue(async () => txId(await (await handle(e)).callTx.closeRoom(hexToBytes(roomId, 32)))),
     isTicketIssued: async () => false,
     roomState: async (e, roomId) => {
