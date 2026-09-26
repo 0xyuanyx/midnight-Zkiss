@@ -12,7 +12,7 @@ export function poolOptions(config: Config, env: NodeJS.ProcessEnv = process.env
     connectionString: url?.toString() ?? config.databaseUrl,
     ...(ca ? { ssl: { ca, rejectUnauthorized: true } } : {}),
     max: 10,
-    connectionTimeoutMillis: 5000,
+    connectionTimeoutMillis: 30000,
     idleTimeoutMillis: 30000,
     statement_timeout: 45000,
     idle_in_transaction_session_timeout: 45000,
