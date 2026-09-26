@@ -35,7 +35,10 @@ const initialize=()=>initialized??=(async()=>{
 self.onmessage=async(event:MessageEvent)=>{
   const {id,method,preimage,key,binding}=event.data;
   try {const p=await initialize();const result=await p[method](preimage,key,binding);self.postMessage({id,result});}
-  catch(error) {self.postMessage({id,error:error instanceof Error&&error.message==='PROOF_ASSET_UNAVAILABLE'?'PROOF_ASSET_UNAVAILABLE':'LOCAL_PROOF_FAILED'});}
+  catch(error) {
+    // Diagnostics stay in this device's console; the error text is never sent to the server.
+    console.error('[proof-worker]',method,error instanceof Error?error.message:String(error));
+    self.postMessage({id,error:error instanceof Error&&error.message==='PROOF_ASSET_UNAVAILABLE'?'PROOF_ASSET_UNAVAILABLE':'LOCAL_PROOF_FAILED'});}
   finally {preimage?.fill(0);}
 };
 export {};
