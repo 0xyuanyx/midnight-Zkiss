@@ -1,0 +1,14 @@
+**/node_modules
+**/.env*
+**/midnight-level-db
+**/reports
+**/dist
+**/test-results
+**/playwright-report
+.git
+.vercel
+output
+tmp
+web/public/zk
+**/*.pem
+**/*.key

@@ -5,8 +5,8 @@ test('두 사용자가 실제 API로 프로필·호감·대화·SNS 상호 공�
   test.skip(process.env.ZKISS_LIVE_E2E !== '1', 'Local demo API, database and worker required');
   const actualChain = process.env.ZKISS_REAL_SNS === '1';
   test.setTimeout(actualChain ? 900_000 : 150_000);
-  const aContext = await browser.newContext({ ignoreHTTPSErrors: true });
-  const bContext = await browser.newContext({ ignoreHTTPSErrors: true });
+  const aContext = await browser.newContext({ baseURL: testInfo.project.use.baseURL, ignoreHTTPSErrors: !process.env.WEB_TEST_BASE_URL });
+  const bContext = await browser.newContext({ baseURL: testInfo.project.use.baseURL, ignoreHTTPSErrors: !process.env.WEB_TEST_BASE_URL });
   const a = await aContext.newPage();
   const b = await bContext.newPage();
   const suffix = Date.now().toString().slice(-7);
@@ -42,7 +42,7 @@ test('두 사용자가 실제 API로 프로필·호감·대화·SNS 상호 공�
     await page.getByLabel('간단한 자기소개', { exact: true }).fill('음악 이야기를 좋아해요');
     await page.getByLabel('분석용 사진 선택').setInputFiles(resolve('public/assets/feed-lime.png'));
     await page.getByRole('button', { name: 'AI 프로필 만들기' }).click();
-    await expect(page).toHaveURL('/profile/preview', { timeout: 20000 });
+    await expect(page).toHaveURL('/profile/preview', { timeout: process.env.ZKISS_REAL_AI === '1' ? 180000 : 20000 });
     if (process.env.ZKISS_EXPECT_GENERATED_IMAGES === '1') {
       await expect(page.getByRole('img', { name: 'AI가 생성한 프로필 이미지', exact: true })).toHaveAttribute('src', /\/api\/v1\/events\/.+\/profile-images\//);
       await expect.poll(() => page.locator('.impression-avatar').evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
