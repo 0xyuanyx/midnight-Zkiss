@@ -17,7 +17,7 @@ export async function loadProviders(config: Config, options: { includeRelay?: bo
   const ai: AiProvider | undefined = config.aiProviderModule
     ? await load(config.aiProviderModule)
     : config.geminiApiKey
-      ? createGeminiProvider(config.geminiApiKey, config.geminiModel ?? "")
+      ? createGeminiProvider(config.geminiApiKey, config.geminiModel ?? "", fetch, { attemptTimeoutMs: config.aiTimeoutMs })
       : undefined;
   if (
     midnight &&

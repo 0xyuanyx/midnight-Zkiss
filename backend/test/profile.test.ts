@@ -270,6 +270,23 @@ test("real AI records external processing independently of demo chain mode", asy
   } finally { await f.close(); }
 });
 
+test("one AI job can finish after one attempt timeout without creating another job", async () => {
+  const { localConfig } = await import('../src/config.js');
+  const ai = { mode: 'demo' as const, analyze: async () => {
+    await new Promise(resolve => setTimeout(resolve, 70));
+    return { intro: '뒤늦게 도착한 소개예요.', modelVersion: 'delayed-test' };
+  } };
+  const f = await fixture('demo', { config: { ...localConfig, aiTimeoutMs: 20 }, ai });
+  try {
+    const u = await activeUser(f);
+    const r = await f.app.inject({ method: 'POST', url: '/api/v1/events/evt/me/ai-jobs', ...photo(u, png) });
+    expect(r.statusCode).toBe(202);
+    const done = await waitAi(f, u, r.json().data.id);
+    expect(done.status).toBe('succeeded');
+    expect((await f.pool.query('SELECT count(*)::int AS n FROM ai_jobs')).rows[0].n).toBe(1);
+  } finally { await f.close(); }
+});
+
 test("missing real AI never falls back to demo analysis", async () => {
   const { localConfig } = await import('../src/config.js');
   const f = await fixture('demo', { config: { ...localConfig, aiMode: 'real' } });

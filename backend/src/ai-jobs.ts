@@ -55,7 +55,9 @@ export function aiJobs(
       task = (async () => {
         let response: { intro: string; modelVersion: string } | undefined;
         let failure = "AI_UNAVAILABLE";
-        const timer = setTimeout(() => controller.abort(), config.aiTimeoutMs);
+        // Gemini makes up to three individually bounded attempts. This is a
+        // final safety cap for a provider that does not settle after abort.
+        const timer = setTimeout(() => controller.abort(), config.aiTimeoutMs * 3 + 15_000);
         try {
           response = z
             .object({
