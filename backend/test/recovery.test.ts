@@ -50,6 +50,22 @@ test("worker expires abandoned intents and closed-event rooms without an adapter
     await f.close();
   }
 });
+test("worker preserves a retrying AI job and fails an abandoned one", async () => {
+  const f = await fixture();
+  try {
+    const a = await user(f);
+    await f.pool.query(
+      "INSERT INTO ai_jobs(id,owner_id,profile_version,mode,status,created_at) VALUES($1,$3,0,'demo','processing',now()-interval '6 minutes'),($2,$3,0,'demo','processing',now()-interval '16 minutes')",
+      ['ai_retrying', 'ai_abandoned', a.id],
+    );
+    await worker.maintain(f.pool);
+    const jobs = (await f.pool.query("SELECT id,status,failure_code FROM ai_jobs ORDER BY id")).rows;
+    expect(jobs).toEqual([
+      { id: 'ai_abandoned', status: 'failed', failure_code: 'PROCESS_INTERRUPTED' },
+      { id: 'ai_retrying', status: 'processing', failure_code: null },
+    ]);
+  } finally { await f.close(); }
+});
 test("reconciliation and partial failures never grant admission; wrong network is rejected", async () => {
   let verdict: Verification = { status: "reconciling" };
   const adapter: MidnightAdapter = {
