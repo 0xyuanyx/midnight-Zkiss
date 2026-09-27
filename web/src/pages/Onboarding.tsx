@@ -114,6 +114,7 @@ export function AnalysisPage() {
   const { profile, setProfileCreated, scene, analyze, busy, error } = useSession();
   const navigate = useNavigate();
   const hold = scene === 'analysis';
+  const failed = !scene && !busy && !!error;
   const started = useRef(false);
   useEffect(() => {
     if (!profile.photoReady || hold) return;
@@ -136,9 +137,9 @@ export function AnalysisPage() {
         <img className="analysis-ring" src="/assets/analysis-ring.svg" alt="" width={191} height={191} />
         <strong>AI</strong>
       </div>
-      <h1>첫인상을 만들고 있어요</h1>
-      <p>표정과 분위기를 바탕으로<br />소개 문구와 프로필 이미지를 만들고 있어요.</p>
-      <div className={`scan-progress ${hold ? 'scan-progress--still' : ''}`} aria-hidden="true"><span /></div>
+      <h1>{failed ? '사진을 처리하지 못했어요' : '첫인상을 만들고 있어요'}</h1>
+      {failed ? <p>{error}</p> : <p>표정과 분위기를 바탕으로<br />소개 문구와 프로필 이미지를 만들고 있어요.</p>}
+      {!failed && <div className={`scan-progress ${hold ? 'scan-progress--still' : ''}`} aria-hidden="true"><span /></div>}
       {scene && <span className="sr-only">실제 AI 분석 없이 예시 프로필로 연결되는 체험입니다.</span>}
       {!scene && !busy && error && <Link className="button button--outline" to="/profile?step=2">사진을 다시 선택해 재시도</Link>}
     </main>

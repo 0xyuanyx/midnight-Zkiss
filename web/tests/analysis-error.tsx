@@ -1,0 +1,10 @@
+import React from 'react';
+import { createRoot } from 'react-dom/client';
+import { MemoryRouter } from 'react-router-dom';
+import { AnalysisPage } from '../src/pages/Onboarding';
+import { SessionContext, sampleProfile, type Session } from '../src/state/session';
+import { ApiError, errorMessage } from '../src/state/api';
+import '../src/styles.css';
+const code = new URLSearchParams(location.search).get('code') || 'INVALID_PHOTO';
+const session = { profile: sampleProfile, busy: false, error: errorMessage(new ApiError(code)), analyze: async () => false, setProfileCreated: () => {}, eventName: '테스트' } as unknown as Session;
+createRoot(document.querySelector('#root')!).render(<MemoryRouter><SessionContext.Provider value={session}><AnalysisPage /></SessionContext.Provider></MemoryRouter>);

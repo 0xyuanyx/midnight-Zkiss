@@ -83,6 +83,11 @@ export async function buildApp(options: {
       status = 415;
       code = "UNSUPPORTED_MEDIA_TYPE";
     }
+    // Never log request bodies, headers, file names, or provider response content.
+    if (req.routeOptions.url?.includes('/me/')) console.error(JSON.stringify({
+      code: 'PROFILE_REQUEST_FAILED', errorCode: code, status, route: req.routeOptions.url,
+      method: req.method, requestId: req.id, fields,
+    }));
     reply.code(status).send({
       error: { code, fields, retryable: [429, 503].includes(status) },
       meta: { requestId: req.id, serverTime: new Date().toISOString() },

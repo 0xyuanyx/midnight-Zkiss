@@ -38,6 +38,10 @@ export function errorMessage(error: unknown) {
   const messages: Record<string, string> = {
     SERVICE_NOT_CONFIGURED: '아직 서버 연결을 준비 중이에요. 잠시 후 다시 방문해 주세요.',
     INVALID_API_RESPONSE: 'API 응답을 읽을 수 없어요. 개발 서버의 /api 프록시 설정을 확인해 주세요.',
+    INVALID_PHOTO: '사진 파일을 읽을 수 없거나 해상도가 너무 높아요. 2,000만 화소 이하의 JPG 또는 PNG 사진으로 다시 선택해 주세요.',
+    UNSUPPORTED_MEDIA_TYPE: '지원하지 않는 사진 형식이에요. JPG, PNG, WebP 사진을 선택해 주세요.',
+    FILE_TOO_LARGE: '사진 용량이 너무 커요. 5MB 이하의 사진을 선택해 주세요.',
+    VALIDATION_ERROR: '입력 정보나 사진 형식을 확인한 뒤 다시 시도해 주세요.',
     PHOTO_REQUIRED: '분석할 사진을 다시 선택해 주세요.',
     NETWORK_ERROR: '서버에 연결할 수 없어요. 연결을 확인하고 다시 시도해 주세요.',
     SESSION_REQUIRED: '행사 입장이 필요해요.', SESSION_EXPIRED: '세션이 만료됐어요. 다시 입장해 주세요.',
