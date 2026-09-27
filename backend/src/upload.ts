@@ -22,10 +22,18 @@ export async function readUpload(req: FastifyRequest) {
         fields[part.fieldname] = part.value;
       }
     }
-    const parsed = z
-      .object({ expectedVersion: z.coerce.number().int().min(0) })
-      .strict()
-      .parse(fields);
+    // Some browser/proxy paths drop multipart text fields. Keep version metadata
+    // in a header too; never infer it from the current database version.
+    const headerVersion = req.headers['x-profile-version'];
+    const version = z.coerce.number().int().min(0).safe();
+    if (headerVersion !== undefined) {
+      if (typeof headerVersion !== 'string' || !/^\d+$/.test(headerVersion)) fail(422, 'VALIDATION_ERROR');
+      const expected = version.parse(headerVersion);
+      if (Object.hasOwn(fields, 'expectedVersion') && version.parse(fields.expectedVersion) !== expected)
+        fail(422, 'VALIDATION_ERROR');
+      fields.expectedVersion = expected;
+    }
+    const parsed = z.object({ expectedVersion: version }).strict().parse(fields);
     if (!bytes || bytes.length === 0) fail(422, "PHOTO_REQUIRED");
     const valid =
       (mime === "image/png" &&

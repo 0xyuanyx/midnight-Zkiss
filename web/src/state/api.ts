@@ -12,6 +12,11 @@ export class Api {
     const headers: Record<string, string> = {};
     if (method !== 'GET') { headers['x-csrf-token'] = this.csrf; headers['idempotency-key'] = key; }
     const multipart = body instanceof FormData;
+    if (multipart && body.has('expectedVersion')) {
+      const version = body.get('expectedVersion');
+      if (typeof version !== 'string' || !/^\d+$/.test(version)) throw new ApiError('VALIDATION_ERROR');
+      headers['x-profile-version'] = version;
+    }
     if (body !== undefined && !multipart) headers['content-type'] = 'application/json';
     let response: Response;
     try { response = await fetch(`/api/v1${path}`, { method, headers, credentials: 'same-origin', body: body === undefined ? undefined : multipart ? body : JSON.stringify(body), signal: AbortSignal.timeout(20000) }); }
