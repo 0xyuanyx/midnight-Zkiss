@@ -270,23 +270,6 @@ test("real AI records external processing independently of demo chain mode", asy
   } finally { await f.close(); }
 });
 
-test("one AI job can finish after one attempt timeout without creating another job", async () => {
-  const { localConfig } = await import('../src/config.js');
-  const ai = { mode: 'demo' as const, analyze: async () => {
-    await new Promise(resolve => setTimeout(resolve, 70));
-    return { intro: '뒤늦게 도착한 소개예요.', modelVersion: 'delayed-test' };
-  } };
-  const f = await fixture('demo', { config: { ...localConfig, aiTimeoutMs: 20 }, ai });
-  try {
-    const u = await activeUser(f);
-    const r = await f.app.inject({ method: 'POST', url: '/api/v1/events/evt/me/ai-jobs', ...photo(u, png) });
-    expect(r.statusCode).toBe(202);
-    const done = await waitAi(f, u, r.json().data.id);
-    expect(done.status).toBe('succeeded');
-    expect((await f.pool.query('SELECT count(*)::int AS n FROM ai_jobs')).rows[0].n).toBe(1);
-  } finally { await f.close(); }
-});
-
 test("missing real AI never falls back to demo analysis", async () => {
   const { localConfig } = await import('../src/config.js');
   const f = await fixture('demo', { config: { ...localConfig, aiMode: 'real' } });
@@ -299,21 +282,58 @@ test("missing real AI never falls back to demo analysis", async () => {
     expect((await f.pool.query('SELECT count(*)::int AS count FROM ai_jobs')).rows[0].count).toBe(0);
   } finally { await f.close(); }
 });
-test("participant introduction is limited to 20 characters and published with the profile", async () => {
-  const f = await fixture();
+
+test('generated images are persisted, owner-only before publication, and protected by event and block boundaries', async () => {
+  const generated = await sharp({ create: { width: 12, height: 12, channels: 3, background: '#f0abcd' } }).png().toBuffer();
+  const f = await fixture('demo', { ai: { mode: 'demo', analyze: async () => ({ intro: 'Generated intro', modelVersion: 'text-test', image: { bytes: Buffer.from(generated), mime: 'image/png', modelVersion: 'image-test' } }) } });
   try {
-    const a = await activeUser(f, "A"),
-      b = await activeUser(f, "B");
-    const base = { expectedVersion: 1, nickname: "B", age: 24, gender: "unspecified" };
-    expect((await call(f, b, "PUT", "/events/evt/me/profile", { ...base, introduction: "가".repeat(21) })).statusCode).toBe(422);
-    const saved = await call(f, b, "PUT", "/events/evt/me/profile", { ...base, introduction: "전시와 음악을 좋아해요." });
-    expect(saved.statusCode).toBe(200);
-    expect(saved.json().data).toMatchObject({ introduction: "전시와 음악을 좋아해요.", intro: "테스트 소개" });
-    // Drafts stay private until publication; publication copies the whole profile.
-    expect((await call(f, a, "GET", "/events/evt/feed")).json().data.items[0].profile.introduction).toBe("");
-    await f.pool.query("UPDATE participants SET published_profile=profile WHERE id=$1", [b.id]);
-    expect((await call(f, a, "GET", "/events/evt/feed")).json().data.items[0].profile.introduction).toBe("전시와 음악을 좋아해요.");
-  } finally {
-    await f.close();
-  }
+    const a = await activeUser(f), b = await activeUser(f), outside = await activeUser(f, 'Outside', 'other');
+    const upload = await f.app.inject({ method: 'POST', url: '/api/v1/events/evt/me/ai-jobs', ...photo(a, png) });
+    const done = await waitAi(f, a, upload.json().data.id);
+    expect(done.status).toBe('succeeded');
+    const mine = (await call(f, a, 'GET', '/me')).json().data.profile;
+    expect(mine.imageUrl).toMatch(/^\/api\/v1\/events\/evt\/profile-images\/img_/);
+    const request = (u: typeof a) => f.app.inject({ url: mine.imageUrl, headers: headers(u) });
+    const owner = await request(a);
+    expect(owner.statusCode).toBe(200);
+    expect(owner.headers['content-type']).toBe('image/webp');
+    expect((await request(b)).statusCode).toBe(404);
+    expect((await f.app.inject(mine.imageUrl)).statusCode).toBe(401);
+    expect((await request(outside)).statusCode).toBe(404);
+    expect((await call(f, a, 'POST', '/events/evt/me/profile/publication', { expectedVersion: done.profileVersion })).statusCode).toBe(200);
+    expect((await request(b)).statusCode).toBe(200);
+    expect((await call(f, b, 'GET', `/events/evt/profiles/${a.id}`)).json().data.imageUrl).toBe(mine.imageUrl);
+    await f.pool.query('INSERT INTO blocks(event_id,owner_id,target_id) VALUES($1,$2,$3)', ['evt', b.id, a.id]);
+    expect((await request(b)).statusCode).toBe(404);
+    const stored = (await f.pool.query('SELECT bytes FROM profile_images')).rows[0].bytes;
+    expect(stored.equals(png)).toBe(false);
+    expect((await sharp(stored).metadata()).format).toBe('webp');
+  } finally { await f.close(); }
+});
+
+test('required image output fails the entire AI job when the provider only returns text', async () => {
+  const { localConfig } = await import('../src/config.js');
+  const f = await fixture('demo', { config: { ...localConfig, requireGeneratedImage: true } });
+  try {
+    const a = await activeUser(f);
+    const upload = await f.app.inject({ method: 'POST', url: '/api/v1/events/evt/me/ai-jobs', ...photo(a, png) });
+    const done = await waitAi(f, a, upload.json().data.id);
+    expect(done).toMatchObject({ status: 'failed', failureCode: 'AI_IMAGE_REQUIRED' });
+    expect((await call(f, a, 'GET', '/me')).json().data.profile.intro).toBe('테스트 소개');
+    expect((await f.pool.query('SELECT count(*)::int AS n FROM profile_images')).rows[0].n).toBe(0);
+  } finally { await f.close(); }
+});
+
+test('photo analysis receives the saved profile gender for avatar generation', async () => {
+  let received: unknown;
+  const f = await fixture('demo', {ai:{mode:'demo',async analyze(_photo:Buffer,_mime:string,_signal:AbortSignal,profile:unknown) { received=profile; return {intro:'단정한 인상이에요.',tags:['단정한 헤어','또렷한 눈매'],modelVersion:'test'}; }}});
+  try {
+    const u=await activeUser(f);
+    await f.pool.query("UPDATE participants SET profile=jsonb_set(profile,'{gender}', '\"male\"') WHERE id=$1",[u.id]);
+    const response=await f.app.inject({method:'POST',url:'/api/v1/events/evt/me/ai-jobs',...photo(u,png)});
+    expect(response.statusCode).toBe(202);
+    await waitAi(f,u,response.json().data.id);
+    expect(received).toEqual({gender:'male'});
+    expect((await f.pool.query('SELECT profile FROM participants WHERE id=$1',[u.id])).rows[0].profile.tags).toEqual(['단정한 헤어','또렷한 눈매']);
+  } finally {await f.close();}
 });

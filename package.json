@@ -15,6 +15,7 @@
   "scripts": {
     "dev": "npm run dev -w web --",
     "build": "npm run build -w web",
+    "build:vercel": "npm run build && node scripts/prepare-vercel-output.mjs",
     "preview": "npm run preview -w web --",
     "test:web": "npm test -w web --",
     "compact": "npm run compact -w contract",
@@ -28,7 +29,13 @@
     "backend:typecheck": "npm run typecheck -w backend",
     "backend:db:up": "docker compose -f backend-compose.yml up -d --wait",
     "backend:db:migrate": "npm run db:migrate -w backend",
-    "backend:db:seed": "npm run db:seed -w backend"
+    "backend:db:seed": "npm run db:seed -w backend",
+    "prepare:sns-assets": "node scripts/prepare-sns-assets.mjs",
+    "test:sns": "npm run test:sns --prefix midnight",
+    "sns:test-server": "node --import tsx backend/integration/sns-server.ts",
+    "sns:setup": "node --import tsx scripts/sns-local.ts setup",
+    "sns:api": "node --import tsx scripts/sns-local.ts api",
+    "sns:worker": "node --import tsx scripts/sns-local.ts worker"
   },
   "overrides": {
     "@midnight-ntwrk/ledger-v8": "8.1.0",

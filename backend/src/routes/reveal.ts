@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { eventChain, enqueue } from "../chain-context.js";
+import { eventChain, enqueue, roomChainContext } from "../chain-context.js";
 import type { FastifyInstance } from "fastify";
 import type { Pool } from "pg";
 import { z } from "zod";
@@ -67,6 +67,7 @@ export function revealDto(r: Row, uid: string) {
     conversationId: r.conversation_id,
     version: r.version,
     status,
+    mySlotIndex: a ? 0 : 1,
     myDecision: r.decisions[uid] ?? "pending",
     peerDecision: r.decisions[peer] ?? "pending",
     transcriptHash: r.transcript_hash,
@@ -197,7 +198,7 @@ export function reveal(
         409,
         "CHAIN_SCOPE_CHANGED",
       );
-      const chainRoomId = r.chain_room_id ?? randomBytes(32).toString("hex");
+      const chainRoomId = roomChainContext(r, c.event).roomId;
       if (!r.chain_room_id)
         await c.db.query(
           "UPDATE conversations SET chain_room_id=$2,chain_event=$3 WHERE id=$1",
@@ -343,14 +344,15 @@ export function reveal(
         available(c);
         await room(c, r.conversation_id, true);
         need(
-          r.status === "requested" &&
-            !!r.transcript_hash &&
+          ["collecting", "requested"].includes(r.status) &&
             decisions[c.uid] === "pending",
           409,
           "REVEAL_NOT_READY",
         );
         decisions[c.uid] = "accepted";
-        status = "awaiting_chain";
+        const peers = (await c.db.query('SELECT id,contact_version,device_key_version FROM participants WHERE id=ANY($1::text[])', [[r.a,r.b]])).rows;
+        need(peers.every(p => p.contact_version === (p.id === r.a ? r.a_contact : r.b_contact) && p.device_key_version === (p.id === r.a ? r.a_key : r.b_key)), 409, 'VERSION_CONFLICT');
+        status = r.transcript_hash ? "awaiting_chain" : "collecting";
       } else if (b.action === "reject") {
         need(decisions[c.uid] === "pending", 409, "REVEAL_NOT_READY");
         decisions[c.uid] = "rejected";

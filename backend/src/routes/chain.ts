@@ -54,6 +54,7 @@ export function chain(
         503,
         "FEATURE_NOT_READY",
       );
+      need(!config.snsOnly, 409, "ADMISSION_DISABLED");
       const event = eventChain(c.event);
       const b = z
         .object({ ticketLeaf: z.string().regex(/^[a-f0-9]{64}$/) })
@@ -105,7 +106,6 @@ export function chain(
           z
             .object({
               purpose: z.literal("admission"),
-              admissionNullifier: z.string().regex(/^[a-f0-9]{64}$/).optional(),
               devicePublicKey: z
                 .string()
                 .max(88)
@@ -127,9 +127,8 @@ export function chain(
         transcript: string | null = null,
         deadline = Date.now() + 10 * 60 * 1000;
       if (b.purpose === "admission") {
+        need(!config.snsOnly, 409, "ADMISSION_DISABLED");
         need(adapter.capabilities.admission, 503, "FEATURE_NOT_READY");
-        need(config.mode !== "real" || b.admissionNullifier, 400, "ADMISSION_NULLIFIER_REQUIRED");
-        need(!c.p.admission_nullifier || c.p.admission_nullifier === b.admissionNullifier, 409, "ADMISSION_NULLIFIER_CHANGED");
         need(c.p.admission_status !== "active", 409, "ALREADY_ADMITTED");
         need(c.p.ticket_status === "issued", 409, "TICKET_NOT_ISSUED");
         need(
@@ -153,8 +152,8 @@ export function chain(
         if (b.deviceKeyVersion < c.p.device_key_version)
           fail(409, "KEY_VERSION_CHANGED");
         await c.db.query(
-          "UPDATE participants SET device_public_key=$2,device_key_version=$3,admission_status='admission_pending',admission_nullifier=COALESCE(admission_nullifier,$4) WHERE id=$1",
-          [c.uid, b.devicePublicKey, b.deviceKeyVersion, b.admissionNullifier ?? null],
+          "UPDATE participants SET device_public_key=$2,device_key_version=$3,admission_status='admission_pending' WHERE id=$1",
+          [c.uid, b.devicePublicKey, b.deviceKeyVersion],
         );
         c.p.device_public_key = b.devicePublicKey;
         c.p.device_key_version = b.deviceKeyVersion;
@@ -217,7 +216,6 @@ export function chain(
         deviceKeyVersion: c.p.device_key_version,
         revealRequestId: revealId,
         transcriptHash: transcript,
-        admissionNullifier: b.purpose === "admission" ? (b.admissionNullifier ?? null) : null,
         nonce: token(),
         expiresAt: new Date(Math.floor(deadline / 1000) * 1000).toISOString(),
       };
@@ -301,6 +299,32 @@ export function chain(
     },
     { active: false, idempotent: true },
   );
+  route("GET", E + "/midnight/proof-context", async (c) => {
+    need(config.snsOnly && adapter?.proofContext, 503, "FEATURE_NOT_READY");
+    return result(await providerCall(() => adapter!.proofContext!(eventChain(c.event))));
+  });
+  route("POST", E + "/chain-intents/:intentId/relay", async (c) => {
+    need(config.snsOnly && adapter?.validateRelay, 503, "FEATURE_NOT_READY");
+    await limit(c, "relay", 6);
+    const b = z.object({ transaction: z.string().min(1).max(1400000).regex(/^[A-Za-z0-9+/]+={0,2}$/) }).strict().parse(c.request.body);
+    const i = await one(c.db, "SELECT * FROM chain_intents WHERE id=$1 AND owner_id=$2 AND event_id=$3", [c.params.intentId, c.uid, c.event.id]);
+    need(i);
+    need(i.purpose === 'reveal_approval' && i.prepared.protocolVersion === 'zkiss-sns-v1', 409, 'RELAY_SCOPE_INVALID');
+    const o = (await one(c.db, "SELECT * FROM operations WHERE intent_id=$1", [i.id]))!;
+    const existing = await one(c.db, "SELECT * FROM sns_relay_jobs WHERE intent_id=$1", [i.id]);
+    if (existing) {
+      need(existing.transaction_hash === hash(b.transaction), 409, 'IDEMPOTENCY_CONFLICT');
+      return result(operation({ ...o, mode: i.mode, purpose: i.purpose }), 202);
+    }
+    need(new Date(i.expires_at).getTime() > Date.now(), 409, 'CONSENT_EXPIRED');
+    const r = await one(c.db, "SELECT * FROM reveal_requests WHERE id=$1", [i.reveal_request_id]);
+    need(r && r.status === 'awaiting_chain' && r.decisions[c.uid] === 'accepted', 409, 'REVEAL_NOT_READY');
+    await room(c, r.conversation_id, true);
+    need(!o.transaction_id, 409, 'IDEMPOTENCY_CONFLICT');
+    await providerCall(() => adapter!.validateRelay!(b.transaction, i.prepared));
+    await c.db.query("INSERT INTO sns_relay_jobs(intent_id,transaction_hash,proven_transaction) VALUES($1,$2,$3)", [i.id, hash(b.transaction), b.transaction]);
+    return result(operation({ ...o, mode: i.mode, purpose: i.purpose }), 202);
+  }, { idempotent: true, phase: 'chat', bodyLimit: 1500000 });
   route(
     "POST",
     E + "/chain-intents/:intentId/transactions",

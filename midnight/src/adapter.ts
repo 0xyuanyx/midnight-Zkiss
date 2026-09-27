@@ -1,4 +1,3 @@
-import { pureCircuits } from '../contract/managed/zkiss/contract/index.js';
 // MidnightAdapter implementation for the backend (docs/MIDNIGHT_ADAPTER_CONTRACT.ts).
 // Success is decided ONLY from contract ledger effects read back from the chain, never from a tx id or a client claim.
 import type {
@@ -35,6 +34,7 @@ export const CIRCUITS = { admission: 'admit', reveal_approval: 'approveReveal' }
 
 export type AdapterConfig = {
   mode: 'real' | 'demo';
+  protocolVersion?: string;
   network: string;
   zkManifestUrl: string | null;
   /**
@@ -78,7 +78,7 @@ export const createMidnightAdapter = (cfg: AdapterConfig): MidnightAdapter => {
   };
 
   const base = (contractAddress: string, circuit: string, payload: Uint8Array): PreparedIntent => ({
-    protocolVersion: PROTOCOL_VERSION,
+    protocolVersion: cfg.protocolVersion ?? PROTOCOL_VERSION,
     network: cfg.network,
     contractAddress,
     circuit,
@@ -95,8 +95,7 @@ export const createMidnightAdapter = (cfg: AdapterConfig): MidnightAdapter => {
 
     if (binding.purpose === 'admission') {
       if (!capabilities.admission) throw new AdapterError('CAPABILITY_DISABLED', 'admission');
-      if (!binding.admissionNullifier || !/^[0-9a-f]{64}$/.test(binding.admissionNullifier)) throw new AdapterError('ADMISSION_NULLIFIER_REQUIRED', 'expected ticket nullifier required');
-      return base(contractAddress, CIRCUITS.admission, encodePayload({ kind: 'admission', bindingHash: bh, expiresAt, eventScope, admissionNullifier: hexToBytes(binding.admissionNullifier, 32) }));
+      return base(contractAddress, CIRCUITS.admission, encodePayload({ kind: 'admission', bindingHash: bh, expiresAt, eventScope }));
     }
 
     if (binding.purpose === 'reveal_approval') {
@@ -154,7 +153,7 @@ export const createMidnightAdapter = (cfg: AdapterConfig): MidnightAdapter => {
 
   const verify = async (input: VerificationInput): Promise<Verification> => {
     // 1. Context: a proof for another protocol/network/contract never counts.
-    if (input.protocolVersion !== PROTOCOL_VERSION) return failed('PROTOCOL_MISMATCH');
+    if (input.protocolVersion !== (cfg.protocolVersion ?? PROTOCOL_VERSION)) return failed('PROTOCOL_MISMATCH');
     if (input.network !== cfg.network) return failed('NETWORK_MISMATCH');
     const contractAddress = input.contractAddress.toLowerCase();
     if (!/^[0-9a-f]+$/.test(contractAddress)) return failed('CONTRACT_MISMATCH');
@@ -194,7 +193,7 @@ export const createMidnightAdapter = (cfg: AdapterConfig): MidnightAdapter => {
       if (payload.kind === 'admission') {
         // The payload's scope must be this contract's scope (the reveal transcript already binds the contract address).
         if (!bytesEqual(payload.eventScope, snap.eventScope)) return { v: failed('EVENT_SCOPE_MISMATCH') };
-        const recorded = snap.admissionExpiry(pureCircuits.admissionKey(bh, payload.admissionNullifier));
+        const recorded = snap.admissionExpiry(bh);
         if (recorded === undefined) return missing;
         if (recorded !== payload.expiresAt) return { v: failed('BINDING_MISMATCH') };
         return ok();

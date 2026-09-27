@@ -10,7 +10,7 @@ export interface ChainSnapshot {
   blockRef: string; // "<height>:<hash>" of the state that was read
   blockTimeSec: bigint | null;
   eventScope: Uint8Array;
-  admissionExpiry(admissionKey: Uint8Array): bigint | undefined;
+  admissionExpiry(bindingHash: Uint8Array): bigint | undefined;
   /** consents[consentKey(bindingHash, slotValue)]: only the owner of that slot can have written it. */
   consent(bindingHash: Uint8Array, slotValue: Uint8Array): ConsentView | undefined;
   approval(transcript: Uint8Array): ApprovalView | undefined;
@@ -28,7 +28,7 @@ export interface ChainView {
 /** Subset of the generated `ledger(state)` object that the adapter needs (see contract/managed/zkiss). */
 export interface ZkissLedgerLike {
   eventScope: Uint8Array;
-  admissions: { member(k: Uint8Array): boolean; lookup(k: Uint8Array): bigint };
+  admissions?: { member(k: Uint8Array): boolean; lookup(k: Uint8Array): bigint };
   consents: { member(k: Uint8Array): boolean; lookup(k: Uint8Array): { transcript: Uint8Array; slot: bigint | number; expiresAt: bigint } };
   approvedA: { member(k: Uint8Array): boolean; lookup(k: Uint8Array): Uint8Array };
   approvedB: { member(k: Uint8Array): boolean; lookup(k: Uint8Array): Uint8Array };
@@ -44,7 +44,7 @@ export const snapshotFromLedger = (
   blockRef,
   blockTimeSec,
   eventScope: l.eventScope,
-  admissionExpiry: (k) => (l.admissions.member(k) ? l.admissions.lookup(k) : undefined),
+  admissionExpiry: (k) => (l.admissions?.member(k) ? l.admissions.lookup(k) : undefined),
   consent: (bh, slotValue) => {
     const k = consentKey(bh, slotValue);
     if (!l.consents.member(k)) return undefined;

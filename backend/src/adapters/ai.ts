@@ -1,10 +1,21 @@
+export interface AiResult {
+  intro: string;
+  tags?: string[];
+  modelVersion: string;
+  image?: { bytes: Buffer; mime: string; modelVersion: string };
+}
+export interface AiProfileContext {
+  /** Explicit profile selection; never inferred from the uploaded photo. */
+  gender: "male" | "female" | "unspecified";
+}
 export interface AiProvider {
   mode: "real" | "demo";
   analyze(
     photo: Buffer,
     mime: string,
     signal: AbortSignal,
-  ): Promise<{ intro: string; modelVersion: string }>;
+    profile?: AiProfileContext,
+  ): Promise<AiResult>;
 }
 export const demoAi: AiProvider = {
   mode: "demo",

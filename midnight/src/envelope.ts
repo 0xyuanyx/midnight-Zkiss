@@ -1,8 +1,10 @@
 // Off-chain SNS envelope (PROTOCOL.md §6), RFC 9180 HPKE base mode:
-// DHKEM(X25519, HKDF-SHA256) / HKDF-SHA256 / AES-128-GCM via @hpke/core (hpke-js), WebCrypto only.
+// DHKEM(X25519, HKDF-SHA256) / HKDF-SHA256 / AES-128-GCM via hpke-js.
+// Portable X25519; HKDF and AES-GCM use WebCrypto.
 // Wire shape matches the backend's `hpke-x25519-hkdfsha256-aes128gcm-v1` envelope.
 // Chain approval does not imply delivery: the recipient must still open the envelope and check the contact commitment.
-import { Aes128Gcm, CipherSuite, DhkemX25519HkdfSha256, HkdfSha256 } from '@hpke/core';
+import { Aes128Gcm, CipherSuite, HkdfSha256 } from '@hpke/core';
+import { DhkemX25519HkdfSha256 } from '@hpke/dhkem-x25519';
 import { CONTACT_BYTES, EncodingError, bytesEqual, bytesToHex, concat, hexToBytes } from './encoding.js';
 
 export const ENVELOPE_SUITE = 'hpke-x25519-hkdfsha256-aes128gcm-v1' as const;
@@ -24,6 +26,13 @@ export type RoomKeyPair = { publicKey: Uint8Array; keyPair: CryptoKeyPair };
 
 const b64 = (b: Uint8Array) => btoa(String.fromCharCode(...b));
 const unb64 = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+
+/** Return copies so storage can clear temporary buffers without clearing live keys. */
+export const serializeRoomPrivateKey = async (key: CryptoKey) => (await suite.kem.serializePrivateKey(key)).slice(0);
+export const restoreRoomKey = async (publicKey: Uint8Array, privateKey: Uint8Array): Promise<CryptoKeyPair> => ({
+  publicKey: await suite.kem.deserializePublicKey(publicKey.slice()),
+  privateKey: await suite.kem.deserializePrivateKey(privateKey.slice()),
+});
 
 /** Fresh per-room X25519 key. Never reuse the profile/session key: that would link an anonymous room to a profile. */
 export const generateRoomKey = async (): Promise<RoomKeyPair> => {

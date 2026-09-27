@@ -273,8 +273,7 @@ export async function maintain(pool: Pool) {
       }
     });
   await pool.query(
-    // Three 120-second Gemini attempts can outlive the old five-minute stale threshold.
-    "UPDATE ai_jobs SET status='failed',failure_code='PROCESS_INTERRUPTED',cleanup_status='service_cleaned' WHERE status='processing' AND created_at<now()-interval '15 minutes'",
+    "UPDATE ai_jobs SET status='failed',failure_code='PROCESS_INTERRUPTED',cleanup_status='service_cleaned' WHERE status='processing' AND created_at<now()-interval '5 minutes'",
   );
   // Only operational records have fixed retention. Product and report deletion policy is external.
   await pool.query("DELETE FROM sessions WHERE expires_at<=now()");

@@ -1,5 +1,9 @@
+import { roomChainContext } from "./chain-context.js";
 import type { Row, Db } from "./db.js";
 import { one } from "./db.js";
+function imageUrl(p: Row, imageId?: string) {
+  return imageId ? `/api/v1/events/${encodeURIComponent(p.event_id)}/profile-images/${encodeURIComponent(imageId)}` : null;
+}
 export function profile(p: Row) {
   return {
     id: p.id,
@@ -7,6 +11,7 @@ export function profile(p: Row) {
     version: p.profile_version,
     status: p.profile_status,
     ...(p.profile ?? {}),
+    imageUrl: imageUrl(p, p.profile?.imageId),
   };
 }
 export function publicProfile(p: Row) {
@@ -23,6 +28,7 @@ export function publicProfile(p: Row) {
     introSource: x.introSource ?? "ai",
     tags: x.tags ?? [],
     mbti: x.mbti ?? null,
+    imageUrl: imageUrl(p, x.imageId),
   };
 }
 export function contact(p: Row) {
@@ -41,6 +47,7 @@ export function me(p: Row, config: { mode: string }) {
     admissionStatus: p.admission_status,
     ticket: { leaf: p.ticket_leaf ?? null, status: p.ticket_status ?? null },
     csrfToken: p.csrf_token,
+    devicePublicKey: p.device_public_key ?? null,
     profile: profile(p),
     contact: contact(p),
   };
@@ -98,6 +105,10 @@ export async function conversation(
     chatUntil: event.chat_until,
     freeUntil: null,
     revealRequestId: request?.id ?? null,
+    chainPreparation: canReveal && event.midnight_contract_address ? {
+      ...roomChainContext(r, event), status: r.chain_preparation_status ?? 'waiting',
+      mySlot: r.chain_slots?.[uid] ?? null,
+    } : null,
     allowedActions:
       r.status === "active"
         ? [

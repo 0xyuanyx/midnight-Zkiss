@@ -1,0 +1,11 @@
+**/node_modules
+**/.env*
+**/*.pem
+**/*.key
+**/midnight-level-db
+**/reports
+**/test-results
+**/playwright-report
+output
+tmp
+.git

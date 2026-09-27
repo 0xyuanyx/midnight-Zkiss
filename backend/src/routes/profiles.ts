@@ -10,7 +10,6 @@ import {
   fail,
   id,
   versionInput,
-  limit,
   pagination,
   page,
 } from "../http.js";
@@ -42,9 +41,8 @@ export function profiles(
             .regex(/^[IE][NS][FT][JP]$/)
             .nullable()
             .optional(),
+          introduction: z.string().trim().max(200).optional(),
           tags: z.array(z.string().trim().min(1).max(30)).max(5).optional(),
-          // Participant-written 20-character introduction shown with the AI profile.
-          introduction: z.string().trim().min(1).max(20).optional(),
         })
         .strict()
         .parse(c.request.body);
@@ -52,7 +50,9 @@ export function profiles(
       const { expectedVersion, ...fields } = b;
       const data = {
         ...fields,
+        tags: fields.tags ?? c.p.profile?.tags ?? [],
         intro: c.p.profile?.intro,
+        imageId: c.p.profile?.imageId,
         introSource: c.p.profile?.introSource ?? "ai",
       };
       const p = await one(
@@ -69,7 +69,6 @@ export function profiles(
     E + "/me/ai-jobs",
     async (c) => {
       need(ai && ai.mode === (config.aiMode ?? config.mode), 503, "AI_UNAVAILABLE");
-      await limit(c, "ai", 3, 3600);
       const b = c.request.body as { expectedVersion: number };
       checkVersion(c.p.profile_version, b.expectedVersion);
       need(c.p.profile, 409, "PROFILE_REQUIRED");

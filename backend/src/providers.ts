@@ -1,4 +1,3 @@
-import type { MidnightRelay } from './adapters/relay.js';
 import { createGeminiProvider } from "./adapters/gemini.js";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
@@ -6,7 +5,7 @@ import type { Config } from "./config.js";
 import type { MidnightAdapter, MidnightOperator } from "./adapters/midnight.js";
 import type { AiProvider } from "./adapters/ai.js";
 /** Modules are trusted operator-installed code, never URLs or user input. */
-export async function loadProviders(config: Config, options: { includeRelay?: boolean } = {}) {
+export async function loadProviders(config: Config) {
   const load = async (path: string) => {
     if (/^[a-z]+:/i.test(path)) throw new Error("LOCAL_MODULE_REQUIRED");
     return (await import(pathToFileURL(resolve(path)).href)).default;
@@ -14,10 +13,11 @@ export async function loadProviders(config: Config, options: { includeRelay?: bo
   const midnight: MidnightAdapter | undefined = config.midnightAdapterModule
     ? await load(config.midnightAdapterModule)
     : undefined;
+  if (config.geminiApiKey && !config.aiProviderModule && !config.geminiImageModel) throw new Error("GEMINI_IMAGE_CONFIG_REQUIRED");
   const ai: AiProvider | undefined = config.aiProviderModule
     ? await load(config.aiProviderModule)
     : config.geminiApiKey
-      ? createGeminiProvider(config.geminiApiKey, config.geminiModel ?? "", fetch, { attemptTimeoutMs: config.aiTimeoutMs })
+      ? createGeminiProvider(config.geminiApiKey, config.geminiModel ?? "", fetch, config.geminiImageModel)
       : undefined;
   if (
     midnight &&
@@ -31,9 +31,7 @@ export async function loadProviders(config: Config, options: { includeRelay?: bo
     throw new Error("INVALID_MIDNIGHT_ADAPTER");
   if (ai && (ai.mode !== (config.aiMode ?? config.mode) || typeof ai.analyze !== "function"))
     throw new Error("INVALID_AI_PROVIDER");
-  const relay: MidnightRelay | undefined = options.includeRelay !== false && config.midnightRelayModule ? await load(config.midnightRelayModule) : undefined;
-  if (relay && (config.mode !== 'real' || relay.mode !== 'real' || ['info','balance','submit'].some(k => typeof (relay as any)[k] !== 'function'))) throw new Error('INVALID_MIDNIGHT_RELAY');
-  return { midnight, ai, relay };
+  return { midnight, ai };
 }
 
 /** Kept separate so the API process never imports an operator secret-bearing module. */

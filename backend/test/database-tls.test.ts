@@ -12,6 +12,4 @@ test("deployed Supabase connection uses the supplied CA and verifies the server"
     rejectUnauthorized: true,
     ca: "-----BEGIN CERTIFICATE-----\ncertificate\n-----END CERTIFICATE-----",
   });
-  // The shared Supabase pool can take more than five seconds to establish TLS.
-  expect(options.connectionTimeoutMillis).toBeGreaterThanOrEqual(15000);
 });

@@ -22,10 +22,7 @@ export async function readUpload(req: FastifyRequest) {
         fields[part.fieldname] = part.value;
       }
     }
-    const parsed = z
-      .object({ expectedVersion: z.coerce.number().int().min(0) })
-      .strict()
-      .parse(fields);
+    const parsed = z.object({ expectedVersion: z.coerce.number().int().min(0).safe() }).strict().parse(fields);
     if (!bytes || bytes.length === 0) fail(422, "PHOTO_REQUIRED");
     const valid =
       (mime === "image/png" &&

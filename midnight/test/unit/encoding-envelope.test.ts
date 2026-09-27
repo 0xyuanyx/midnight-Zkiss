@@ -24,9 +24,9 @@ const contactCommit = (c: Uint8Array, s: Uint8Array) => h(new TextEncoder().enco
 
 describe('encoding', () => {
   it('round-trips both payload kinds with fixed lengths', () => {
-    const a = { kind: 'admission' as const, admissionNullifier: randomBytes32(), bindingHash: randomBytes32(), expiresAt: 1_800_000_000n, eventScope: randomBytes32() };
+    const a = { kind: 'admission' as const, bindingHash: randomBytes32(), expiresAt: 1_800_000_000n, eventScope: randomBytes32() };
     const ea = encodePayload(a);
-    expect(ea.length).toBe(105);
+    expect(ea.length).toBe(73);
     expect(decodePayload(fromBase64Url(toBase64Url(ea)))).toEqual(a);
     const r = {
       kind: 'reveal_approval' as const,

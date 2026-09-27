@@ -123,3 +123,36 @@ test("real session cookie is host-bound and Secure", async () => {
     await f.close();
   }
 });
+
+test('MVP open admission creates an active session without a ticket or chain intent', async () => {
+  const { localConfig } = await import('../src/config.js');
+  const f = await fixture('real', { config: { ...localConfig, mode: 'real', admissionMode: 'open', defaultEventId: 'evt' } });
+  try {
+    const publicKey = Buffer.alloc(32, 3).toString('base64');
+    const response = await f.app.inject({ method: 'POST', url: '/api/v1/sessions', payload: { devicePublicKey: publicKey } });
+    expect(response.statusCode).toBe(201);
+    expect(response.json().data).toMatchObject({ eventId: 'evt', admissionStatus: 'active', devicePublicKey: publicKey, contact: { keyVersion: 1 } });
+    const cookie = response.cookies.map(c => `${c.name}=${c.value}`).join('; ');
+    expect((await f.app.inject({ url: '/api/v1/events/evt/feed', headers: { cookie } })).statusCode).toBe(200);
+    expect((await f.pool.query('SELECT count(*)::int AS n FROM chain_intents')).rows[0].n).toBe(0);
+    expect((await f.pool.query('SELECT count(*)::int AS n FROM chain_jobs')).rows[0].n).toBe(0);
+    const resumed = await f.app.inject({ method: 'POST', url: '/api/v1/sessions', headers: { cookie }, payload: {} });
+    expect(resumed.json().data.participantId).toBe(response.json().data.participantId);
+  } finally { await f.close(); }
+});
+
+test('default MVP event is prepared once without overwriting its chain scope', async () => {
+  const { localConfig } = await import('../src/config.js');
+  const { ensureDefaultEvent } = await import('../src/default-event.js');
+  const f = await fixture();
+  try {
+    const config = { ...localConfig, admissionMode: 'open' as const, defaultEventId: 'mvp' };
+    await ensureDefaultEvent(f.pool, config);
+    const original = (await f.pool.query("SELECT * FROM events WHERE id='mvp'")).rows[0];
+    expect(original.modes).toEqual(['mutual_like']);
+    await ensureDefaultEvent(f.pool, { ...config, midnightNetwork: 'other', midnightContractAddress: 'c'.repeat(64), midnightEventScope: 'd'.repeat(64) });
+    const after = (await f.pool.query("SELECT * FROM events WHERE id='mvp'")).rows[0];
+    expect(after.join_until).toEqual(original.join_until);
+    expect(after.midnight_contract_address).toEqual(original.midnight_contract_address);
+  } finally { await f.close(); }
+});

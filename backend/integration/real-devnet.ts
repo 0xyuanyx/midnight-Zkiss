@@ -24,11 +24,9 @@ const { setNetworkId } = await sdk('@midnight-ntwrk/midnight-js/network-id');
 const { findDeployedContract } = await sdk('@midnight-ntwrk/midnight-js/contracts');
 const { buildWallet, configureProviders, localConfig: endpoints } = await moduleAt('src/node/wallet.ts');
 const { createOperatorRuntime, compiledZkiss, ZK_PATH } = await moduleAt('src/node/operator.ts');
-const { createRelay } = await moduleAt('src/node/relay.ts');
-const { Transaction } = await sdk('@midnight-ntwrk/ledger-v8');
 const device = await moduleAt('src/device.ts');
 const crypto = await moduleAt('src/envelope.ts');
-const { bytesToHex: hex, hexToBytes: bytes, randomBytes32, decodeContact, decodePayload, encodePayload, fromBase64Url, toBase64Url } = await moduleAt('src/encoding.ts');
+const { bytesToHex: hex, hexToBytes: bytes, randomBytes32, decodeContact } = await moduleAt('src/encoding.ts');
 const { ledger, pureCircuits } = await moduleAt('contract/managed/zkiss/contract/index.js');
 const report: any = { startedAt: new Date().toISOString(), network: 'undeployed', ai: 'synthetic fixture', feeWallet: 'single shared local genesis provider', steps: [] };
 const step = async <T>(name: string, fn: () => Promise<T>): Promise<T> => {
@@ -79,26 +77,7 @@ try {
   base = await app.listen({ host: '127.0.0.1', port: 0 });
   assert.equal((await request(E)).data.mode, 'real');
   const tick = () => processChainJobs(pool, midnight, runtime.operator);
-  const relay = createRelay({ network: 'undeployed', endpoints, providers });
-  let activeIntent: any;
-  const participantProviders = { ...providers, walletProvider: { ...providers.walletProvider, async balanceTx(tx: any) {
-    assert.ok(activeIntent);
-    const stored = (await pool.query('SELECT * FROM chain_intents WHERE id=$1', [activeIntent.id])).rows[0];
-    const input = { ...stored.prepared, intentId: stored.id, purpose: stored.purpose, bindingHash: stored.binding_hash, expiresAt: new Date(stored.expires_at).toISOString(), transactionId: 'pending' };
-    const wire = Buffer.from(tx.serialize()).toString('base64');
-    const payload = decodePayload(fromBase64Url(input.publicPayload));
-    if (payload.kind === 'admission') {
-      const wrong = { ...payload, admissionNullifier: randomBytes32() };
-      const wrongInput = { ...input, publicPayload: toBase64Url(encodePayload(wrong)) };
-      await assert.rejects(() => relay.validate(wire, wrongInput, event), /RELAY_BINDING_MISMATCH/);
-      await assert.rejects(() => relay.balance(wire, wrongInput, event), (error: any) => error.safeToRetry === true && error.cause?.message === 'RELAY_BINDING_MISMATCH');
-      report.steps.push({ name: 'relay rejects other ticket nullifier before sponsorship', ms: 0 });
-    }
-    const balanced = await relay.balance(wire, input, event);
-    report.steps.push({ name: `relay sponsors exact ${input.purpose} effect`, ms: 0 });
-    return Transaction.deserialize('signature', 'proof', 'binding', Buffer.from(balanced, 'base64'));
-  } } };
-  const handle = (id: string, ps: any) => findDeployedContract(participantProviders, { contractAddress: event.contractAddress, compiledContract: compiledZkiss, privateStateId: id, initialPrivateState: ps });
+  const handle = (id: string, ps: any) => findDeployedContract(providers, { contractAddress: event.contractAddress, compiledContract: compiledZkiss, privateStateId: id, initialPrivateState: ps });
   const context = { network: event.network, contractAddress: event.contractAddress, eventScope: bytes(event.eventScope, 32) };
   const confirm = async (u: User, intent: any, tx: any) => {
     await request(E + `/chain-intents/${intent.id}/transactions`, 'POST', { transactionId: tx.transactionId }, u);
@@ -117,10 +96,9 @@ try {
     await request(E + '/midnight/ticket', 'POST', { ticketLeaf: hex(device.ticketLeafFor(u.ps)) }, u);
     await step(`worker issues ticket ${name}`, tick);
     assert.equal((await request('/me', 'GET', undefined, u)).data.ticket.status, 'issued');
-    const intent = (await request(E + '/chain-intents', 'POST', { purpose: 'admission', admissionNullifier: hex(device.admissionNullifierFor(u.ps, context.eventScope)), devicePublicKey: Buffer.from(u.ownerKey.publicKey).toString('base64'), deviceKeyVersion: 1 }, u)).data;
+    const intent = (await request(E + '/chain-intents', 'POST', { purpose: 'admission', devicePublicKey: Buffer.from(u.ownerKey.publicKey).toString('base64'), deviceKeyVersion: 1 }, u)).data;
     u.handle = await handle(name, u.ps);
-    activeIntent = intent;
-    const tx = await step(`device admission ${name}`, () => device.submitAdmission(u.handle, intent, { ...context, privateState: u.ps }));
+    const tx = await step(`device admission ${name}`, () => device.submitAdmission(u.handle, intent, context));
     await confirm(u, intent, tx);
     assert.equal((await request('/me', 'GET', undefined, u)).data.admissionStatus, 'active');
     await request(E + `/demo/chain-intents/${intent.id}/resolution`, 'POST', { outcome: 'succeeded' }, u, 404);
@@ -167,7 +145,6 @@ try {
   for (const [i, u] of [a, b].entries()) {
     const intent = (await request(E + '/chain-intents', 'POST', { purpose: 'reveal_approval', revealRequestId: r.id, transcriptHash: r.transcriptHash }, u)).data;
     const state = ledger((await providers.publicDataProvider.queryContractState(event.contractAddress)).data);
-    activeIntent = intent;
     const tx = await step(`device reveal approval ${i + 1}`, () => device.submitRevealApproval(u.handle, intent, r.terms, { ...context, ledger: state, mine: u.setup }));
     await confirm(u, intent, tx);
     if (i === 0) {

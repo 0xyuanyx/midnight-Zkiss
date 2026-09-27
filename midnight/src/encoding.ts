@@ -1,7 +1,7 @@
-// Canonical byte encodings for zkiss-midnight-v2 (PROTOCOL.md §4–§5).
+// Canonical byte encodings for zkiss-midnight-v1 (PROTOCOL.md §4–§5).
 // No JSON.stringify-based hashing: every public value has a fixed-width layout.
 
-export const PROTOCOL_VERSION = 'zkiss-midnight-v2';
+export const PROTOCOL_VERSION = 'zkiss-midnight-v1';
 export const CONTACT_BYTES = 64;
 
 export type Bytes32 = Uint8Array;
@@ -71,7 +71,6 @@ export const decodeContact = (bytes: Uint8Array): string => {
 
 export type AdmissionPayload = {
   kind: 'admission';
-  admissionNullifier: Bytes32;
   bindingHash: Bytes32;
   expiresAt: bigint;
   eventScope: Bytes32;
@@ -102,7 +101,7 @@ const need32 = (b: Uint8Array, name: string) => {
 
 export const encodePayload = (p: PublicPayload): Uint8Array => {
   if (p.kind === 'admission') {
-    return concat([Uint8Array.of(0x01), need32(p.bindingHash, 'bindingHash'), u64(p.expiresAt), need32(p.eventScope, 'eventScope'), need32(p.admissionNullifier, 'admissionNullifier')]);
+    return concat([Uint8Array.of(0x01), need32(p.bindingHash, 'bindingHash'), u64(p.expiresAt), need32(p.eventScope, 'eventScope')]);
   }
   if (p.slotIndex !== 0 && p.slotIndex !== 1) throw new EncodingError('SLOT_RANGE', 'slotIndex must be 0 or 1');
   return concat([
@@ -117,8 +116,8 @@ export const encodePayload = (p: PublicPayload): Uint8Array => {
 
 export const decodePayload = (b: Uint8Array): PublicPayload => {
   const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
-  if (b[0] === 0x01 && b.length === 1 + 32 + 8 + 32 + 32) {
-    return { kind: 'admission', bindingHash: b.slice(1, 33), expiresAt: dv.getBigUint64(33, false), eventScope: b.slice(41, 73), admissionNullifier: b.slice(73, 105) };
+  if (b[0] === 0x01 && b.length === 1 + 32 + 8 + 32) {
+    return { kind: 'admission', bindingHash: b.slice(1, 33), expiresAt: dv.getBigUint64(33, false), eventScope: b.slice(41, 73) };
   }
   if (b[0] === 0x02 && b.length === 1 + 32 + 8 + 32 + 1 + 32) {
     const slot = b[73];

@@ -1,0 +1,23 @@
+import { test, expect } from '@playwright/test';
+import sharp from 'sharp';
+import { resolve } from 'node:path';
+for (const format of ['jpeg','png'] as const) test(`real photo upload ${format}`,async({page},info)=>{
+ test.skip(process.env.ZKISS_UPLOAD_LIVE!=='1');test.setTimeout(240000);
+ const bytes=await sharp(resolve('public/assets/feed-lime.png')).resize(588,420)[format]().toBuffer();
+ page.on('request',r=>{if(r.url().endsWith('/me/ai-jobs'))console.log('UPLOAD_SENT',info.project.name,format,r.postDataBuffer()?.length,r.headers()['content-type']);});
+ page.on('response',async r=>{if(r.url().endsWith('/me/ai-jobs'))console.log('UPLOAD_RESPONSE',r.status(),JSON.stringify(await r.json()).slice(0,350));});
+ await page.goto('/');await page.getByRole('button',{name:'행사 프로필 만들기'}).click();
+ await expect(page).toHaveURL('/profile');
+ await page.getByLabel('닉네임',{exact:true}).fill('업로드검증'+Date.now().toString().slice(-5));
+ await page.getByLabel('나이',{exact:true}).fill('24');await page.getByLabel('성별',{exact:true}).selectOption('여성');
+ await page.getByRole('button',{name:'다음',exact:true}).click();
+ await page.getByLabel('MBTI',{exact:true}).fill('ENFP');await page.getByLabel('SNS ID',{exact:true}).fill('upload-test');
+ await page.getByLabel('간단한 자기소개',{exact:true}).fill('업로드 검증');
+ await page.getByLabel('분석용 사진 선택').setInputFiles({name:`photo.${format}`,mimeType:`image/${format}`,buffer:bytes});
+ const upload=page.waitForResponse(r=>r.url().endsWith('/me/ai-jobs'));
+ await page.getByRole('button',{name:'AI 프로필 만들기'}).click();
+ expect((await upload).status()).toBe(202);
+ await expect(page).toHaveURL('/profile/preview',{timeout:210000});
+ await expect.poll(()=>page.locator('.impression-avatar').evaluate((img:HTMLImageElement)=>img.complete&&img.naturalWidth>0)).toBe(true);
+ await page.screenshot({path:info.outputPath('generated.png')});
+});

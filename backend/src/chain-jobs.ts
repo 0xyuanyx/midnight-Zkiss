@@ -154,6 +154,32 @@ async function ticket(pool: Pool, j: Row, operator: MidnightOperator) {
     if (updated) await emit({ db, event }, p.id, "ticket.status_changed", p.id);
   });
 }
+async function open(pool: Pool, j: Row, operator: MidnightOperator) {
+  const c = await one(pool, 'SELECT * FROM conversations WHERE id=$1', [j.resource_id]);
+  const e = (await one(pool, 'SELECT * FROM events WHERE id=$1', [j.event_id]))!;
+  if (!c?.chain_room_id || !(await webOpen(pool,c,e))) return;
+  if (canonical(eventChain(e)) !== canonical(j.chain_event)) throw new Error('SCOPE_CHANGED');
+  const a=c.chain_slots[c.a], b=c.chain_slots[c.b];
+  if (!a || !b) throw new Error('SLOTS_MISSING');
+  let state=await operator.roomState(j.chain_event,c.chain_room_id);
+  if (state==='absent') {
+    const started=Date.now();
+    const tx=await operator.openRoom(j.chain_event,{roomId:c.chain_room_id,slotA:a,slotB:b,expiresAt:new Date(Math.floor(new Date(e.chat_until).getTime()/1000)*1000).toISOString()});
+    await pool.query('UPDATE chain_jobs SET transaction_id=$2 WHERE id=$1',[j.id,tx.transactionId]);
+    console.log(JSON.stringify({metric:'sns.room_open',durationMs:Date.now()-started}));
+    state=await operator.roomState(j.chain_event,c.chain_room_id);
+  }
+  if (state==='absent') throw new Error('NOT_CONFIRMED');
+  await transaction(pool,async db=>{
+    const event=(await one(db,'SELECT * FROM events WHERE id=$1 FOR UPDATE',[e.id]))!;
+    const fresh=(await one(db,'SELECT * FROM conversations WHERE id=$1',[c.id]))!;
+    if (!(await webOpen(db,fresh,event))) {await enqueueClose(db,fresh,j.mode);return;}
+    if(fresh.chain_preparation_status!==state){
+      await db.query('UPDATE conversations SET chain_preparation_status=$2 WHERE id=$1',[c.id,state]);
+      for(const uid of [c.a,c.b]) await emit({db,event},uid,'conversation.preparation_changed',c.id,c.id,fresh.version);
+    }
+  });
+}
 async function terms(
   pool: Pool,
   j: Row,
@@ -253,8 +279,8 @@ async function terms(
     }));
     const updated = (await one(
       db,
-      "UPDATE reveal_requests SET transcript_hash=$2,transcript_payload=$3,key_material=$4,status='requested',version=version+1 WHERE id=$1 RETURNING *",
-      [r.id, result.transcriptHash, result.terms, JSON.stringify(keys)],
+      "UPDATE reveal_requests SET transcript_hash=$2,transcript_payload=$3,key_material=$4,status=$5,version=version+1 WHERE id=$1 RETURNING *",
+      [r.id, result.transcriptHash, result.terms, JSON.stringify(keys), fresh.decisions[fresh.a] === "accepted" && fresh.decisions[fresh.b] === "accepted" ? "awaiting_chain" : "requested"],
     ))!;
     await notify(db, ev, updated);
   });
@@ -356,6 +382,7 @@ export async function processChainJobs(
     for (const j of jobs) {
       try {
         if (j.kind === "ticket") await ticket(pool, j, operator);
+        else if (j.kind === "open") await open(pool, j, operator);
         else if (j.kind === "terms") await terms(pool, j, adapter, operator);
         else await close(pool, j, operator);
         await pool.query(

@@ -1,3 +1,4 @@
+import { processRelayJobs } from './relay-worker.js';
 import { demoMidnight, createDemoOperator } from "./adapters/demo-midnight.js";
 import { setTimeout as delay } from "node:timers/promises";
 import { runtime } from "./runtime.js";
@@ -13,8 +14,7 @@ const stop = () => {
 process.once("SIGINT", stop);
 process.once("SIGTERM", stop);
 try {
-  // The relay owns an API-only fee wallet. A worker must not instantiate it.
-  const providers = await loadProviders(config, { includeRelay: false });
+  const providers = await loadProviders(config);
   const midnight =
     providers.midnight ?? (config.mode === "demo" ? demoMidnight : undefined);
   const operator =
@@ -31,8 +31,10 @@ try {
     try {
       await maintain(pool);
       if (midnight) await reconcile(pool, midnight);
-      if (midnight && operator)
+      if (midnight && operator) {
         await processChainJobs(pool, midnight, operator);
+        await processRelayJobs(pool, operator);
+      }
     } catch {
       console.error(JSON.stringify({ code: "WORKER_TICK_FAILED" }));
     }

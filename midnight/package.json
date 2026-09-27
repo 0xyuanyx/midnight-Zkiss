@@ -15,10 +15,13 @@
     "test:devnet": "vitest run test/devnet",
     "manifest": "vitest run test/tools",
     "deploy:event": "tsx scripts/deploy-event.ts",
-    "test:integration": "vitest run test/integration"
+    "test:integration": "vitest run test/integration",
+    "compact:sns": "compact compile +0.31.1 sns/zkiss.compact sns/managed/sns",
+    "test:sns": "vitest run test/sns"
   },
   "dependencies": {
     "@hpke/core": "1.9.0",
+    "@hpke/dhkem-x25519": "1.8.0",
     "@midnight-ntwrk/compact-js": "2.5.1",
     "@midnight-ntwrk/compact-runtime": "0.16.0",
     "@midnight-ntwrk/ledger-v8": "8.1.0",

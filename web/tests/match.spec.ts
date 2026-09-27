@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 test('상호 호감 팝업에서 해당 상대의 대화를 시작한다', async ({ page }) => {
-  await page.goto('/likes');
+  await page.goto('/preview/likes');
   await page.getByRole('button', { name: '♡ 호감 보내기 · 모카' }).click();
   const modal = page.getByRole('dialog');
   await expect(modal).toBeVisible();
@@ -15,7 +15,7 @@ test('상호 호감 팝업에서 해당 상대의 대화를 시작한다', async
 });
 
 test('나중에 닫아도 매칭은 유지되고 팝업은 다시 뜨지 않는다', async ({ page }) => {
-  await page.goto('/home');
+  await page.goto('/preview/home');
   await page.getByRole('button', { name: '♡ 호감 보내기 · 라임' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.getByRole('button', { name: '♡ 호감 보내기 · 모카' }).click();

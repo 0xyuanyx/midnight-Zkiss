@@ -16,7 +16,7 @@ import { zkissIndexerView } from '../../src/ledger-decoder.js';
 import { readRevealStatus } from '../../src/adapter.js';
 import { bytesToHex, decodeContact, hexToBytes, randomBytes32 } from '../../src/encoding.js';
 import { generateRoomKey, openContact, sealContact, type Envelope } from '../../src/envelope.js';
-import { admissionNullifierFor, newParticipant, parseTerms, roomMaterial, setupRoom, submitAdmission, submitRevealApproval, ticketLeafFor, transcriptFor, type RoomSetup } from '../../src/device.js';
+import { newParticipant, parseTerms, roomMaterial, setupRoom, submitAdmission, submitRevealApproval, ticketLeafFor, transcriptFor, type RoomSetup } from '../../src/device.js';
 
 const BASE = process.env.IT_BASE_URL ?? 'http://127.0.0.1:3101';
 const EVENT = process.env.IT_EVENT_ID ?? 'evt_it';
@@ -140,10 +140,10 @@ describe(`backend(real) + midnight v2 integration (${BASE}, ${EVENT})`, () => {
         privateStateId: `it-${name}-${Date.now()}`,
         initialPrivateState: ps,
       } as any);
+      const intent = (await api(E + '/chain-intents', 'POST', { purpose: 'admission', devicePublicKey: Buffer.from(randomBytes32()).toString('base64'), deviceKeyVersion: 1 }, u)).data;
       const ec = await eventChain();
-      const intent = (await api(E + '/chain-intents', 'POST', { purpose: 'admission', admissionNullifier: bytesToHex(admissionNullifierFor(ps, hexToBytes(ec.eventScope, 32))), devicePublicKey: Buffer.from(randomBytes32()).toString('base64'), deviceKeyVersion: 1 }, u)).data;
       const sub = await step(`${name} admit tx (device proof)`, () =>
-        submitAdmission(h, intent, { network: intent.network, contractAddress: intent.contractAddress, eventScope: hexToBytes(ec.eventScope, 32), privateState: ps }),
+        submitAdmission(h, intent, { network: intent.network, contractAddress: intent.contractAddress, eventScope: hexToBytes(ec.eventScope, 32) }),
       );
       await api(E + `/chain-intents/${intent.id}/transactions`, 'POST', { transactionId: sub.transactionId }, u);
       await step(`${name} admission active (worker verify)`, () =>
@@ -225,7 +225,6 @@ describe(`backend(real) + midnight v2 integration (${BASE}, ${EVENT})`, () => {
     for (const x of [A, B]) {
       const d = setups.get(x.u.id)!;
       const cur = (await api(revealPath, 'GET', undefined, x.u)).data;
-      const ec = await eventChain();
       const intent = (await api(E + '/chain-intents', 'POST', { purpose: 'reveal_approval', revealRequestId: cur.id, transcriptHash: cur.transcriptHash }, x.u)).data;
       const sub = await step(`${x.u.name} approveReveal tx (device proof)`, () =>
         submitRevealApproval(d.h, intent, cur.terms, { network: intent.network, contractAddress: intent.contractAddress, eventScope: scope, ledger: l0, mine: d.setup }),

@@ -10,7 +10,6 @@ export interface Binding {
   deviceKeyVersion: number;
   revealRequestId: string | null;
   transcriptHash: string | null;
-  admissionNullifier?: string | null;
   nonce: string;
   expiresAt: string;
 }
@@ -70,6 +69,8 @@ export type RevealChainStatus =
   | "closed"
   | "unknown";
 export interface MidnightAdapter {
+  proofContext?(event: EventChain): Promise<{ contractState: string; zswapState: string; parameters: string }>;
+  validateRelay?(raw: string, prepared: PreparedIntent): Promise<void>;
   mode: "real" | "demo";
   capabilities: {
     admission: boolean;
@@ -90,6 +91,8 @@ export interface MidnightAdapter {
 }
 /** Worker only. Operator secrets are read by the installed module, never by HTTP. */
 export interface MidnightOperator {
+  prepareRelay?(raw: string, prepared: PreparedIntent): Promise<{ transactionId: string; transaction: string }>;
+  submitRelay?(raw: string): Promise<void>;
   mode: "real" | "demo";
   issueTicket(
     event: EventChain,

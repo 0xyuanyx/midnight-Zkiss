@@ -31,3 +31,10 @@
 /contract/src/witnesses.ts
 /contract/src/test/private-match.test.ts
 /e2e/src/private-match.e2e.test.ts
+# Generated public proving assets, rebuilt by prepare:sns-assets
+/web/public/zk/
+
+# Local deployment state and presentation working files
+/.vercel/
+/output/
+/tmp/

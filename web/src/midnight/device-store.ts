@@ -1,87 +1,80 @@
-/** Device-only encrypted storage. Same-origin script access is still trusted;
- * this is not a defense against XSS or a compromised device. No network calls.
- */
-type WrappedKey = { version: 1; wrappingKey: CryptoKey; iv: Uint8Array; publicKey: ArrayBuffer; sealed: ArrayBuffer };
-const request = <T>(r: IDBRequest<T>) => new Promise<T>((resolve, reject) => { r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
-async function open() {
-  const r = indexedDB.open('zkiss-device-v1', 1);
-  r.onupgradeneeded = () => r.result.createObjectStore('secrets');
-  return request(r);
-}
-async function read(db: IDBDatabase, scope: string): Promise<WrappedKey | undefined> {
-  return request(db.transaction('secrets').objectStore('secrets').get(scope));
-}
-async function unwrap(record: WrappedKey): Promise<CryptoKeyPair> {
-  if (record.version !== 1 || !record.wrappingKey) throw Error('DEVICE_KEY_UNREADABLE');
-  const plaintext = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: record.iv as Uint8Array<ArrayBuffer> }, record.wrappingKey, record.sealed));
+/** Encrypted device-only storage. Wrap X25519 keys because WebKit cannot
+ * reliably structured-clone them to IndexedDB. No network or server storage. */
+import { serializeRoomPrivateKey, restoreRoomKey } from '../../../midnight/src/envelope';
+interface Wrapped { version: 2 | 3; wrappingKey: CryptoKey; iv: Uint8Array<ArrayBuffer>; sealed: ArrayBuffer; progress: Record<string, unknown> }
+const database = new Promise<IDBDatabase>((resolve,reject)=>{
+  const request=indexedDB.open('zkiss-sns-v1',1);
+  request.onupgradeneeded=()=>request.result.createObjectStore('rooms');
+  request.onsuccess=()=>resolve(request.result); request.onerror=()=>reject(request.error);
+});
+const get = async (key: string): Promise<any> => {
+  const db=await database;
+  return new Promise((resolve,reject)=>{const r=db.transaction('rooms').objectStore('rooms').get(key);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
+};
+const put = async (key: string,value: Wrapped, create = false) => {
+  const db=await database;
+  await new Promise<void>((resolve,reject)=>{const t=db.transaction('rooms','readwrite');const store=t.objectStore('rooms');if(create){const r=store.get(key);r.onsuccess=()=>{if(!r.result)store.add(value,key);};}else store.put(value,key);t.oncomplete=()=>resolve();t.onabort=()=>reject(t.error);t.onerror=()=>{};});
+  if (!(await get(key))) throw new Error('DEVICE_KEY_NOT_PERSISTED');
+};
+export async function readDevice<T>(key:string):Promise<T|undefined> {
+  const record=await get(key); if(!record)return undefined;
+  if(record.version!==2 && record.version!==3)return record as T; // earlier local Chromium records
+  const plain=new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:record.iv},record.wrappingKey,record.sealed));
   try {
-    return {
-      privateKey: await crypto.subtle.importKey('pkcs8', plaintext, { name: 'X25519' }, false, ['deriveBits']),
-      publicKey: await crypto.subtle.importKey('raw', record.publicKey, { name: 'X25519' }, true, []),
-    };
-  } finally { plaintext.fill(0); }
-}
-/** Scope must include event + participant + purpose/room. Never share across users. */
-export async function deviceKey(scope: string, requireExisting = false): Promise<CryptoKeyPair> {
-  if (!scope) throw Error('DEVICE_SCOPE_REQUIRED');
-  const db = await open();
-  try {
-    const existing = await read(db, scope);
-    if (existing !== undefined) return await unwrap(existing);
-    if (requireExisting) throw Error('DEVICE_KEY_LOST');
-    const pair = await crypto.subtle.generateKey({ name: 'X25519' }, true, ['deriveBits']) as CryptoKeyPair;
-    const wrappingKey = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
-    const plaintext = new Uint8Array(await crypto.subtle.exportKey('pkcs8', pair.privateKey));
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    let record: WrappedKey;
-    try { record = { version: 1, wrappingKey, iv, publicKey: await crypto.subtle.exportKey('raw', pair.publicKey), sealed: await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, wrappingKey, plaintext) }; }
-    finally { plaintext.fill(0); }
-    // Atomic add: concurrent tabs must converge on the same key, never overwrite.
-    try {
-      await new Promise<void>((resolve, reject) => {
-        const tx = db.transaction('secrets', 'readwrite'); tx.objectStore('secrets').add(record, scope);
-        tx.oncomplete = () => resolve(); tx.onabort = () => reject(tx.error); tx.onerror = () => {};
-      });
-    } catch (error) {
-      if (!(error instanceof DOMException) || error.name !== 'ConstraintError') throw error;
+    const decoded=JSON.parse(new TextDecoder().decode(plain),(_key,v)=>v && typeof v==='object' && Array.isArray(v.u8)?new Uint8Array(v.u8):v);
+    let secret = decoded.privateKey as Uint8Array;
+    if (record.version === 2) {
+      // Existing WebCrypto PKCS#8 X25519 keys: RFC 8410, fixed OID + 32-byte seed.
+      const prefix = new Uint8Array([0x30,0x2e,0x02,0x01,0x00,0x30,0x05,0x06,0x03,0x2b,0x65,0x6e,0x04,0x22,0x04,0x20]);
+      if (decoded.pkcs8?.length !== 48 || !prefix.every((n, i) => decoded.pkcs8[i] === n)) throw new Error('DEVICE_KEY_FORMAT_INVALID');
+      secret = decoded.pkcs8.slice(16);
     }
-    const stored = await read(db, scope);
-    if (!stored) throw Error('DEVICE_KEY_NOT_PERSISTED');
-    return await unwrap(stored);
-  } finally { db.close(); }
+    const keyPair = await restoreRoomKey(decoded.setup.roomKey.publicKey, secret);
+    secret.fill(0); decoded.pkcs8?.fill(0); delete decoded.pkcs8; delete decoded.privateKey;
+    decoded.setup.roomKey.keyPair=keyPair;
+    return {...decoded,...record.progress} as T;
+  } finally {plain.fill(0);}
+}
+export async function writeDevice(key:string,value:any) {
+  let record=await get(key) as Wrapped|undefined;
+  const create=record?.version!==2 && record?.version!==3;
+  if(create) {
+    const privateKey=new Uint8Array(await serializeRoomPrivateKey(value.setup.roomKey.keyPair.privateKey));
+    const wrappingKey=await crypto.subtle.generateKey({name:'AES-GCM',length:256},false,['encrypt','decrypt']);
+    const iv=crypto.getRandomValues(new Uint8Array(12));
+    const payload={privateState:value.privateState,setup:{keyCommit:value.setup.keyCommit,contactCommit:value.setup.contactCommit,roomKey:{publicKey:value.setup.roomKey.publicKey}},privateKey};
+    const plaintext=new TextEncoder().encode(JSON.stringify(payload,(_k,v)=>v instanceof Uint8Array?{u8:Array.from(v)}:v));
+    try {record={version:3,wrappingKey,iv,sealed:await crypto.subtle.encrypt({name:'AES-GCM',iv},wrappingKey,plaintext),progress:{}};}
+    finally {plaintext.fill(0);privateKey.fill(0);}
+  }
+  record!.progress={intent:value.intent,transaction:value.transaction,submitted:value.submitted};
+  await put(key,record!,create);
 }
 
-/** Encrypted structured private state. The non-exportable wrapping key remains
- * in IndexedDB; this protects storage exports, not scripts executing in origin. */
-type SealedState = { version: 2; key: CryptoKey; iv: Uint8Array; ciphertext: ArrayBuffer };
-const encode = (value: unknown) => new TextEncoder().encode(JSON.stringify(value, (_k, v) => v instanceof Uint8Array ? { $bytes: Array.from(v) } : v));
-const decode = (value: ArrayBuffer) => JSON.parse(new TextDecoder().decode(value), (_k, v) => v && Array.isArray(v.$bytes) ? new Uint8Array(v.$bytes) : v);
-export async function readSecret<T>(scope: string): Promise<T | null> {
-  const db = await open();
-  try {
-    const r = await request<SealedState | undefined>(db.transaction('secrets').objectStore('secrets').get('state:'+scope));
-    if (!r) return null;
-    if (r.version !== 2) throw Error('DEVICE_STATE_UNREADABLE');
-    const clear = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: r.iv as Uint8Array<ArrayBuffer>, additionalData: new TextEncoder().encode(scope) }, r.key, r.ciphertext);
-    try { return decode(clear) as T; } finally { new Uint8Array(clear).fill(0); }
-  } finally { db.close(); }
-}
-export async function writeSecret(scope: string, value: unknown): Promise<void> {
-  const db = await open();
-  try {
-    const key = await crypto.subtle.generateKey({name:'AES-GCM',length:256},false,['encrypt','decrypt']);
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const clear = encode(value);
-    let ciphertext: ArrayBuffer;
-    try { ciphertext = await crypto.subtle.encrypt({ name:'AES-GCM',iv,additionalData:new TextEncoder().encode(scope)}, key, clear); }
-    finally { clear.fill(0); }
-    await new Promise<void>((resolve,reject) => {
-      const tx = db.transaction('secrets','readwrite'); tx.objectStore('secrets').put({version:2,key,iv,ciphertext},'state:'+scope);
-      tx.oncomplete=()=>resolve(); tx.onabort=()=>reject(tx.error); tx.onerror=()=>{};
-    });
-  } finally { db.close(); }
-}
-export async function withDeviceLock<T>(scope: string, fn: () => Promise<T>): Promise<T> {
-  if (!navigator.locks) throw Error('DEVICE_LOCKS_UNAVAILABLE');
-  return navigator.locks.request('zkiss:'+scope,fn);
+/** Atomic insert chooses one device secret even when tabs initialize concurrently. */
+export async function participantSecret(uid: string): Promise<Uint8Array> {
+  const key = `device:${uid}`;
+  const restore = async (record: any) => new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:record.iv},record.wrappingKey,record.sealed));
+  const saved = await get(key); if(saved) return restore(saved);
+  const db=await database;
+  const keys=await new Promise<IDBValidKey[]>((resolve,reject)=>{const r=db.transaction('rooms').objectStore('rooms').getAllKeys();r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
+  let secret: Uint8Array<ArrayBuffer>|undefined;
+  for(const oldKey of keys) if(typeof oldKey==='string' && oldKey.startsWith(`${uid}:`)) {
+    const value=await readDevice<any>(oldKey);
+    if(value?.privateState?.participantSecret) {secret=new Uint8Array(value.privateState.participantSecret);break;}
+  }
+  const legacy=sessionStorage.getItem(`zkiss.sns-device.v1:${uid}`);
+  secret ??= legacy ? Uint8Array.from(atob(legacy), c=>c.charCodeAt(0)) : crypto.getRandomValues(new Uint8Array(32));
+  const wrappingKey=await crypto.subtle.generateKey({name:'AES-GCM',length:256},false,['encrypt','decrypt']);
+  const iv=crypto.getRandomValues(new Uint8Array(12));
+  const sealed=await crypto.subtle.encrypt({name:'AES-GCM',iv},wrappingKey,secret);
+  secret.fill(0);
+  const candidate={version:4,wrappingKey,iv,sealed};
+  const winner=await new Promise<any>((resolve,reject)=>{
+    const t=db.transaction('rooms','readwrite'), store=t.objectStore('rooms');let selected:any;
+    const r=store.get(key);r.onsuccess=()=>{selected=r.result??candidate;if(!r.result)store.add(candidate,key);};
+    t.oncomplete=()=>resolve(selected);t.onabort=()=>reject(t.error);
+  });
+  sessionStorage.removeItem(`zkiss.sns-device.v1:${uid}`);
+  return restore(winner);
 }

@@ -40,10 +40,9 @@ export async function migrate(pool: Pool) {
       ["003", "003_ai_metadata.sql"],
       ["004", "004_stream_secret.sql"],
       ["005", "005_midnight_v2.sql"],
-      ["006", "006_admission_nullifier.sql"],
-      ["007", "007_browser_relay.sql"],
-      ["008", "008_browser_relay_privileges.sql"],
-      ["009", "009_browser_relay_rls.sql"],
+      ["006", "006_profile_images.sql"],
+      ["007", "007_sns_relay.sql"],
+      ["008", "008_room_preparation.sql"],
     ]) {
       if (
         !(await one(db, "SELECT version FROM migrations WHERE version=$1", [

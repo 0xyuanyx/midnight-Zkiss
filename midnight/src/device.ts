@@ -3,7 +3,7 @@
 import { encodeContractAddress } from '@midnight-ntwrk/compact-runtime';
 import { pureCircuits, type Ledger, type RevealTerms } from '../contract/managed/zkiss/contract/index.js';
 import type { ZkissPrivateState } from '../contract/witnesses.js';
-import { PROTOCOL_VERSION, bytesEqual, bytesToHex, decodePayload, decodeTerms, encodeContact, fromBase64Url, randomBytes32, type RevealPayload } from './encoding.js';
+import { bytesEqual, bytesToHex, decodePayload, decodeTerms, encodeContact, fromBase64Url, randomBytes32, type RevealPayload } from './encoding.js';
 import { generateRoomKey, type RoomKeyPair } from './envelope.js';
 import type { PreparedIntent } from './adapter-contract.js';
 import { CIRCUITS } from './adapter.js';
@@ -18,8 +18,6 @@ export class DeviceError extends Error {
 export const newParticipant = (): ZkissPrivateState => ({ ticketSecret: randomBytes32(), roomSecrets: {} });
 
 export const ticketLeafFor = (ps: ZkissPrivateState): Uint8Array => pureCircuits.ticketLeaf(ps.ticketSecret);
-
-export const admissionNullifierFor = (ps: ZkissPrivateState, eventScope: Uint8Array): Uint8Array => pureCircuits.nullifierOf(eventScope, ps.ticketSecret);
 
 /** 방 슬롯 값. 단말 → 백엔드 → openRoom. 방마다 달라 공개 원장에서 참가 기록과 연결되지 않는다. */
 export const slotFor = (ps: ZkissPrivateState, eventScope: Uint8Array, roomId: Uint8Array): Uint8Array =>
@@ -79,7 +77,6 @@ export type CallResult = { public: { txId: unknown; txHash?: unknown; blockHeigh
 export type Submitted = { transactionId: string; txHash: string | null };
 
 const checkIntent = (intent: PreparedIntent, expected: { network: string; contractAddress: string; circuit: string }) => {
-  if (intent.protocolVersion !== PROTOCOL_VERSION) throw new DeviceError('PROTOCOL_MISMATCH', intent.protocolVersion);
   if (intent.network !== expected.network) throw new DeviceError('NETWORK_MISMATCH', intent.network);
   if (intent.contractAddress.toLowerCase() !== expected.contractAddress.toLowerCase()) throw new DeviceError('CONTRACT_MISMATCH', intent.contractAddress);
   if (intent.circuit !== expected.circuit) throw new DeviceError('CIRCUIT_MISMATCH', intent.circuit);
@@ -91,13 +88,12 @@ const submitted = (r: CallResult): Submitted => ({ transactionId: String(r.publi
 export const submitAdmission = async (
   handle: ZkissHandle,
   intent: PreparedIntent,
-  ctx: { network: string; contractAddress: string; eventScope: Uint8Array; privateState: ZkissPrivateState },
+  ctx: { network: string; contractAddress: string; eventScope: Uint8Array },
 ): Promise<Submitted> => {
   checkIntent(intent, { ...ctx, circuit: CIRCUITS.admission });
   const p = decodePayload(fromBase64Url(intent.publicPayload));
   if (p.kind !== 'admission') throw new DeviceError('PURPOSE_MISMATCH', p.kind);
   if (!bytesEqual(p.eventScope, ctx.eventScope)) throw new DeviceError('EVENT_SCOPE_MISMATCH', 'payload is for another event');
-  if (!bytesEqual(p.admissionNullifier, admissionNullifierFor(ctx.privateState, ctx.eventScope))) throw new DeviceError('ADMISSION_NULLIFIER_MISMATCH', 'payload is for another ticket');
   return submitted(await handle.callTx.admit(p.bindingHash, p.expiresAt));
 };
 

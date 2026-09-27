@@ -13,7 +13,6 @@ export interface Binding {
   deviceKeyVersion: number;
   revealRequestId: string | null;
   transcriptHash: string | null;
-  admissionNullifier?: string | null;
   nonce: string;
   expiresAt: string;
 }
@@ -62,6 +61,8 @@ export interface RevealTermsResult {
 export type RevealChainStatus = 'awaiting' | 'authorized' | 'closed' | 'unknown';
 
 export interface MidnightAdapter {
+  proofContext?(event: EventChain): Promise<{ contractState: string; zswapState: string; parameters: string }>;
+  validateRelay?(raw: string, prepared: PreparedIntent): Promise<void>;
   mode: 'real' | 'demo';
   capabilities: { admission: boolean; reveal: boolean; anonymousReveal: boolean };
   /** publicPayload is canonical PUBLIC bytes encoded as base64url, never witness data. */
@@ -76,6 +77,8 @@ export interface MidnightAdapter {
 
 /** Worker-only. Default export of MIDNIGHT_OPERATOR_MODULE. */
 export interface MidnightOperator {
+  prepareRelay?(raw: string, prepared: PreparedIntent): Promise<{ transactionId: string; transaction: string }>;
+  submitRelay?(raw: string): Promise<void>;
   mode: 'real' | 'demo';
   issueTicket(event: EventChain, ticketLeaf: string): Promise<{ transactionId: string }>;
   openRoom(event: EventChain, room: { roomId: string; slotA: string; slotB: string; expiresAt: string }): Promise<{ transactionId: string }>;

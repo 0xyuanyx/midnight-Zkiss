@@ -1,4 +1,5 @@
 export interface Impression {
+  example?: boolean;
   image: string;
   lines: readonly string[];
   tags: readonly string[];
@@ -12,6 +13,7 @@ export interface Person extends Impression {
   summary: string;
 }
 export const ownImpression: Impression = {
+  example: true,
   image: '/assets/profile-ai-example.png',
   lines: ['맑은 눈매와 부드러운 얼굴선이 어우러져', '차분하면서도 편안한 첫인상을 만들어요.', '자연스러운 헤어와 포근한 니트 스타일이', '은은한 미소를 한층 더 돋보이게 해요.'],
   tags: ['따뜻한 분위기', '내추럴 스타일', '대화하기 편한'],

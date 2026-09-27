@@ -17,7 +17,6 @@
   "devDependencies": {
     "@types/node": "24.13.6",
     "@types/pg": "8.23.1",
-    "@types/ws": "^8.18.1",
     "tsx": "4.23.15",
     "typescript": "5.9.3",
     "vitest": "4.1.11"
@@ -30,7 +29,6 @@
     "fastify": "5.12.5",
     "pg": "8.23.0",
     "sharp": "0.35.4",
-    "ws": "^8.21.0",
     "zod": "4.6.5"
   }
 }

@@ -2,9 +2,10 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Pool } from "pg";
 import { z } from "zod";
 import { transaction, one } from "./db.js";
-import { need, emit } from "./http.js";
+import { need, emit, id } from "./http.js";
 import { readUpload, uploads } from "./upload.js";
-import type { AiProvider } from "./adapters/ai.js";
+import sharp from "sharp";
+import type { AiProvider, AiResult } from "./adapters/ai.js";
 import type { Config } from "./config.js";
 /** Bounded volatile photo jobs. Only job metadata survives process loss; retry needs re-upload. */
 export function aiJobs(
@@ -42,7 +43,7 @@ export function aiJobs(
       // A replay returns an existing job; never submit the same photo to the provider twice.
       const job = await one(
         pool,
-        "SELECT * FROM ai_jobs WHERE id=$1 AND status='processing'",
+        "SELECT j.*, p.profile AS profile_input FROM ai_jobs j JOIN participants p ON p.id=j.owner_id WHERE j.id=$1 AND j.status='processing'",
         [jobId],
       );
       if (!job) return;
@@ -53,20 +54,20 @@ export function aiJobs(
       controllers.add(controller);
       let task: Promise<void>;
       task = (async () => {
-        let response: { intro: string; modelVersion: string } | undefined;
+        let response: AiResult | undefined;
         let failure = "AI_UNAVAILABLE";
-        // Gemini makes up to three individually bounded attempts. This is a
-        // final safety cap for a provider that does not settle after abort.
-        const timer = setTimeout(() => controller.abort(), config.aiTimeoutMs * 3 + 15_000);
+        const timer = setTimeout(() => controller.abort(), config.aiTimeoutMs);
         try {
           response = z
             .object({
               intro: z.string().trim().min(1).max(500),
+              tags: z.array(z.string().trim().min(1).max(8)).max(2).optional(),
               modelVersion: z.string().min(1).max(200),
+              image: z.object({ bytes: z.instanceof(Buffer).refine(b => b.length > 0 && b.length <= 12 * 1024 * 1024), mime: z.enum(['image/png', 'image/jpeg', 'image/webp']), modelVersion: z.string().min(1).max(200) }).optional(),
             })
             .parse(
               await Promise.race([
-                ai!.analyze(bytes, upload.mime, controller.signal),
+                ai!.analyze(bytes, upload.mime, controller.signal, { gender: ["male", "female"].includes(job.profile_input?.gender) ? job.profile_input.gender : "unspecified" }),
                 new Promise<never>((_, reject) => {
                   if (controller.signal.aborted) reject(new Error("aborted"));
                   else
@@ -78,7 +79,19 @@ export function aiJobs(
                 }),
               ]),
             );
-        } catch {
+          if (config.requireGeneratedImage && !response.image) throw new Error('AI_IMAGE_REQUIRED');
+          if (response.image) {
+            const generated = response.image;
+            try {
+              const decoder = sharp(generated.bytes, { limitInputPixels: 20_000_000 });
+              if (((await decoder.metadata()).pages ?? 1) !== 1) throw new Error('AI_IMAGE_UNAVAILABLE');
+              response.image = { ...generated, mime: 'image/webp', bytes: await decoder.resize(1024, 1024, { fit: 'cover', withoutEnlargement: true }).webp({ quality: 85 }).toBuffer() };
+              if (response.image.bytes.length > 5 * 1024 * 1024) throw new Error('AI_IMAGE_UNAVAILABLE');
+            } finally { generated.bytes.fill(0); }
+          }
+          if (controller.signal.aborted) throw new Error('AI_UNAVAILABLE');
+        } catch (error) {
+          if (error instanceof Error && ['AI_IMAGE_UNAVAILABLE', 'AI_IMAGE_REQUIRED', 'AI_QUOTA_EXCEEDED'].includes(error.message)) failure = error.message;
           response = undefined;
         } finally {
           clearTimeout(timer);
@@ -122,6 +135,8 @@ export function aiJobs(
             }
             if (response) {
               version = p.profile_version + 1;
+              const imageId = response.image ? id('img') : null;
+              if (response.image) await db.query('INSERT INTO profile_images(id,owner_id,mime,bytes,model_version) VALUES($1,$2,$3,$4,$5)', [imageId, p.id, response.image.mime, response.image.bytes, response.image.modelVersion]);
               await db.query(
                 "UPDATE participants SET profile=$2,profile_version=$3 WHERE id=$1",
                 [
@@ -129,7 +144,9 @@ export function aiJobs(
                   JSON.stringify({
                     ...p.profile,
                     intro: response.intro,
+                    tags: response.tags ?? [],
                     introSource: "ai",
+                    imageId,
                   }),
                   version,
                 ],
