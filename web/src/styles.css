@@ -334,3 +334,11 @@
 .request-panel h2 { font-size: 18px; }
 .request-panel p { font-size: 14px; line-height: 1.6; color: #51456f; margin-top: 10px; }
 .request-panel .button { width: 100%; min-height: 48px; font-size: 14px; }
+
+.reveal-processing { margin-top: 16px; padding: 16px; border-radius: 16px; background: #fff; }
+.reveal-processing p { margin: 0 0 12px; font-size: 13px; line-height: 1.65; }
+.reveal-processing .reveal-processing-time { display: flex; align-items: center; gap: 9px; color: #4930a5; font-size: 16px; font-weight: 750; }
+.reveal-spinner { width: 18px; height: 18px; flex: 0 0 18px; border: 2px solid #e3ddfa; border-top-color: #6845da; border-radius: 50%; animation: reveal-spin 1s linear infinite; }
+.reveal-processing .reveal-keep-open { padding: 10px; border-radius: 10px; background: #f3f0ff; color: #483975; }
+@keyframes reveal-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .reveal-spinner { animation: none; } }

@@ -12,7 +12,7 @@ test('두 사용자가 실제 API로 프로필·호감·대화·SNS 상호 공�
   const a = await aContext.newPage();
   const b = await bContext.newPage();
   const suffix = Date.now().toString().slice(-7);
-  const nameA = `가${suffix}`, nameB = `나${suffix}`;
+  const nameA = `테스트하늘${suffix}`, nameB = `테스트바다${suffix}`;
   console.log('SNS_TEST_PROFILES', nameA, nameB);
   const errors: string[] = [];
   const leaked: string[] = [];
@@ -77,13 +77,14 @@ test('두 사용자가 실제 API로 프로필·호감·대화·SNS 상호 공�
     await page.getByLabel('MBTI', { exact: true }).fill('ENFP');
     await page.getByLabel('SNS ID', { exact: true }).fill(sns);
     await page.getByLabel('간단한 자기소개', { exact: true }).fill('음악 이야기를 좋아해요');
-    await page.getByLabel('분석용 사진 선택').setInputFiles(resolve('public/assets/feed-lime.png'));
+    await page.getByLabel('분석용 사진 선택').setInputFiles(resolve(name === nameA ? 'public/assets/feed-lime.png' : 'public/assets/feed-mocha.png'));
     await page.getByRole('button', { name: 'AI 프로필 만들기' }).click();
     await expect(page).toHaveURL('/profile/preview', { timeout: process.env.ZKISS_REAL_AI === '1' ? 180000 : 20000 });
     if (process.env.ZKISS_EXPECT_GENERATED_IMAGES === '1') {
       await expect(page.getByRole('img', { name: 'AI가 생성한 프로필 이미지', exact: true })).toHaveAttribute('src', /\/api\/v1\/events\/.+\/profile-images\//);
       await expect.poll(() => page.locator('.impression-avatar').evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
     }
+    await page.screenshot({path:testInfo.outputPath(name === nameA ? '01-profile-a.png' : '02-profile-b.png'),fullPage:true});
     await page.getByRole('button', { name: '이 프로필로 시작' }).click();
     await expect(page).toHaveURL('/home');
   }
@@ -101,11 +102,12 @@ test('두 사용자가 실제 API로 프로필·호감·대화·SNS 상호 공�
     await a.getByRole('dialog').getByRole('button', { name: '대화 시작하기' }).click();
     for (let i = 0; i < 4; i++) {
       const sender = i % 2 ? b : a;
-      await sender.getByRole('textbox', { name: '메시지', exact: true }).fill(`안녕하세요 ${i}`);
+      await sender.getByRole('textbox', { name: '메시지', exact: true }).fill(['안녕하세요! 오늘 행사 재미있네요.', '안녕하세요! 저도 즐겁게 둘러보고 있어요.', '괜찮으시면 SNS도 서로 공개할까요?', '좋아요! 공개 요청 보내주시면 동의할게요.'][i]);
       await sender.getByRole('button', { name: '메시지 보내기' }).click();
       await expect(sender.getByRole('textbox', { name: '메시지', exact: true })).toHaveValue('');
     }
-    await expect(a.getByRole('log')).toContainText('안녕하세요 3', { timeout: 15000 });
+    await expect(a.getByRole('log')).toContainText('좋아요! 공개 요청 보내주시면 동의할게요.', { timeout: 15000 });
+    await a.screenshot({path:testInfo.outputPath('03-conversation.png'),fullPage:true});
     if(process.env.ZKISS_WAIT_ROOM==='1'){
       await expect.poll(async()=>a.evaluate(async()=>{
         const me=(await (await fetch('/api/v1/me')).json()).data;
@@ -125,8 +127,12 @@ test('두 사용자가 실제 API로 프로필·호감·대화·SNS 상호 공�
     await b.bringToFront();
     await expect(b.getByRole('button', { name: process.env.ZKISS_BASELINE_UI ? 'SNS 공개 동의하기' : '공개 동의', exact: true })).toBeEnabled({ timeout: actualChain ? 180000 : 25000 });
     console.log('SNS_TIMING request_to_consent_ms',Date.now()-revealStart);
+    await a.screenshot({path:testInfo.outputPath('04-requester-waiting.png'),fullPage:true});
+    await b.screenshot({path:testInfo.outputPath('05-recipient-consent.png'),fullPage:true});
     await b.getByRole('button', { name: process.env.ZKISS_BASELINE_UI ? 'SNS 공개 동의하기' : '공개 동의', exact: true }).click();
     const consentAt=Date.now();
+    await expect(b.getByRole('heading',{name:'SNS 공개를 안전하게 준비하고 있어요'})).toBeVisible({timeout:30000});
+    await b.screenshot({path:testInfo.outputPath('06-both-consented-processing.png'),fullPage:true});
     if (process.env.ZKISS_TEST_PROOF_RECOVERY === '1') {
       for (const page of [a, b]) {
         await expect(page.getByRole('button', { name: '공개 준비 다시 시도' })).toBeVisible({ timeout: 30000 });
@@ -139,6 +145,8 @@ test('두 사용자가 실제 API로 프로필·호감·대화·SNS 상호 공�
     }, { timeout: actualChain ? 600000 : 30000, intervals: [1000,2500] }).toBe(true);
     await expect(b.getByRole('heading', { name: '서로 동의했어요' })).toBeVisible({ timeout: actualChain ? 600000 : 30000 });
     console.log('SNS_TIMING consent_to_release_ms',Date.now()-consentAt);
+    await a.screenshot({path:testInfo.outputPath('07-released-a.png'),fullPage:true});
+    await b.screenshot({path:testInfo.outputPath('08-released-b.png'),fullPage:true});
     await a.getByRole('button', { name: `${nameB} SNS ID 복사` }).click();
     await expect(a.getByRole('status')).toContainText('@secret-b');
     expect(await a.evaluate(() => (window as unknown as { copied: string }).copied)).toBe('@secret-b');

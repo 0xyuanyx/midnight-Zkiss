@@ -80,16 +80,16 @@ export function RequestPanel({ peerId }: { peerId: string }) {
     const incoming = active && !consent.mine && c.peerAccepted !== false;
     const both = consent.mine && c.peerAccepted;
     const failed = c.revealApprovalFailed || c.revealPreparationFailed;
-    return <section className="request-panel" aria-live="polite"><h2>SNS 상호 공개</h2>
+    return <section className="request-panel" aria-live="polite"><h2>{both && !failed ? 'SNS 공개를 안전하게 준비하고 있어요' : 'SNS 상호 공개'}</h2>
       <p>{incoming ? `상대방이 SNS 공개에 동의했어요! ${profile.nickname || '회원'}님도 공개에 동의하면 서로의 SNS를 확인할 수 있어요.`
         : failed ? '공개 준비가 중단됐어요. 연결을 확인한 뒤 다시 시도해 주세요.'
-        : both ? '서로 공개에 동의했어요. 안전하게 확인하고 있으니 잠시 이 화면을 유지해 주세요.'
+        : both ? '두 분 모두 동의했어요. 준비가 끝나면 서로의 SNS를 확인할 수 있어요.'
         : consent.mine && active ? '공개에 동의했어요. 상대방이 동의하면 서로의 SNS를 확인할 수 있어요.'
         : c.revealStatus === 'rejected' ? '이번 공개 요청은 종료됐어요. 대화는 계속할 수 있어요.'
         : '두 사람 모두 동의하면 SNS를 확인할 수 있어요.'}</p>
       {incoming ? <div className="reveal-actions"><Button disabled={busy} onClick={()=>void requestReveal(peerId)}>공개 동의</Button><Button variant="outline" disabled={busy} onClick={()=>void requestReveal(peerId,'reject')}>공개 거절</Button></div>
         : failed ? <Button disabled={busy} onClick={()=>void requestReveal(peerId)}>공개 준비 다시 시도</Button>
-        : both ? <ol className="reveal-progress" aria-label="SNS 공개 진행"><li aria-current={c.revealStatus==='collecting'?'step':undefined}>공개 정보 준비</li><li aria-current={['awaiting_chain','authorized'].includes(c.revealStatus??'')?'step':undefined}>안전하게 확인 중</li><li>공개 완료</li></ol>
+        : both ? <div className="reveal-processing" role="status"><p className="reveal-processing-time"><span className="reveal-spinner" aria-hidden="true" />안전하게 확인 중이에요</p><p>최근 Mac 테스트에서는 약 4~5분 걸렸어요.<br />두 분의 기기 성능과 연결 상태에 따라 더 오래 걸릴 수 있어요.</p><p className="reveal-keep-open">두 분 모두 이 화면을 켜 두세요. 다른 앱으로 이동하거나 화면을 잠그면 처리가 멈추거나 지연될 수 있어요.</p><ol className="reveal-progress" aria-label="SNS 공개 진행"><li aria-current={c.revealStatus==='collecting'?'step':undefined}>공개 정보 준비</li><li aria-current={['awaiting_chain','authorized'].includes(c.revealStatus??'')?'step':undefined}>안전하게 확인 중</li><li>공개 완료</li></ol></div>
         : consent.mine && active ? <Button variant="outline" disabled={busy} onClick={()=>void requestReveal(peerId,true)}>공개 요청 취소하기</Button>
         : <Button disabled={busy} onClick={()=>void requestReveal(peerId)}>SNS 공개 동의하기</Button>}
     </section>;
