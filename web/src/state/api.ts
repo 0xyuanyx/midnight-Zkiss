@@ -1,3 +1,4 @@
+import { encodePhotoUpload } from './photo-upload.js';
 export interface ApiProfile { id: string; version: number; status?: string; nickname?: string; age?: number; gender?: string; mbti?: string; intro?: string; introduction?: string; tags?: string[]; imageUrl?: string | null }
 export interface Me { mode: 'demo' | 'real'; participantId: string; eventId: string; csrfToken: string; admissionStatus: string; devicePublicKey?: string | null; ticket: { leaf: string | null; status: string | null }; profile: ApiProfile; contact: { version: number; configured: boolean; keyVersion: number } }
 export interface EventInfo { id: string; name: string; mode: 'demo' | 'real'; aiMode: 'demo' | 'real'; aiReady: boolean; participantCount: number; features: { snsReveal: boolean } }
@@ -12,14 +13,17 @@ export class Api {
     const headers: Record<string, string> = {};
     if (method !== 'GET') { headers['x-csrf-token'] = this.csrf; headers['idempotency-key'] = key; }
     const multipart = body instanceof FormData;
-    if (multipart && body.has('expectedVersion')) {
-      const version = body.get('expectedVersion');
-      if (typeof version !== 'string' || !/^\d+$/.test(version)) throw new ApiError('VALIDATION_ERROR');
-      headers['x-profile-version'] = version;
+    let payload: BodyInit | undefined;
+    if (multipart) {
+      const encoded = await encodePhotoUpload(body);
+      payload = encoded.body;
+      headers['content-type'] = encoded.contentType;
+    } else if (body !== undefined) {
+      headers['content-type'] = 'application/json';
+      payload = JSON.stringify(body);
     }
-    if (body !== undefined && !multipart) headers['content-type'] = 'application/json';
     let response: Response;
-    try { response = await fetch(`/api/v1${path}`, { method, headers, credentials: 'same-origin', body: body === undefined ? undefined : multipart ? body : JSON.stringify(body), signal: AbortSignal.timeout(20000) }); }
+    try { response = await fetch(`/api/v1${path}`, { method, headers, credentials: 'same-origin', body: payload, signal: AbortSignal.timeout(20000) }); }
     catch { throw new ApiError('NETWORK_ERROR'); }
     if (response.status === 204) return undefined as T;
     const result = await response.json().catch(() => ({}));
@@ -47,6 +51,7 @@ export function errorMessage(error: unknown) {
     UNSUPPORTED_MEDIA_TYPE: '지원하지 않는 사진 형식이에요. JPG, PNG, WebP 사진을 선택해 주세요.',
     FILE_TOO_LARGE: '사진 용량이 너무 커요. 5MB 이하의 사진을 선택해 주세요.',
     VALIDATION_ERROR: '입력 정보나 사진 형식을 확인한 뒤 다시 시도해 주세요.',
+    PHOTO_READ_FAILED: '사진 파일을 읽지 못했어요. 기기에 저장된 사진을 다시 선택해 주세요.',
     PHOTO_REQUIRED: '분석할 사진을 다시 선택해 주세요.',
     NETWORK_ERROR: '서버에 연결할 수 없어요. 연결을 확인하고 다시 시도해 주세요.',
     SESSION_REQUIRED: '행사 입장이 필요해요.', SESSION_EXPIRED: '세션이 만료됐어요. 다시 입장해 주세요.',

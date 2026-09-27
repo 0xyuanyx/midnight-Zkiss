@@ -1,3 +1,4 @@
+import { snapshotPhoto } from './photo-upload';
 import { decideReveal } from './reveal-decision';
 import { watchSession } from './stream';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
@@ -29,7 +30,8 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const photo = useRef<File | null>(null);
+  const photo = useRef<Blob | null>(null);
+  const photoSelection = useRef(0);
   const locked = useRef(false);
   const revealCache = useRef(new Map<string, Partial<Conversation>>());
   const refreshLock = useRef<Promise<void> | null>(null);
@@ -226,7 +228,14 @@ export function LiveSessionProvider({ children }: { children: ReactNode }) {
     scene: undefined, profilePublished: me.current?.profile.status === 'published', profile, setProfile, profileCreated, setProfileCreated, ownImpression, people,
     participantCount: event?.participantCount ?? 0, eventName: event?.name ?? 'ZKiss', mode: me.current?.mode ?? '', aiMode: event?.aiMode ?? '', loading, busy, error,
     interests, matchedIds, matched: matchedIds.length > 0, conversations, pendingMatch, dismissMatch: () => setPendingMatch(null), join, analyze, publish,
-    selectPhoto: file => { if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) { photo.current = null; setProfile(p => ({ ...p, photoReady: false })); setError('5MB 이하의 PNG, JPEG, WebP 사진을 선택해 주세요.'); return; } photo.current = file; setError(''); setProfile(p => ({ ...p, photoReady: true })); },
+    selectPhoto: file => {
+      const selection = ++photoSelection.current;
+      photo.current = null; setError(''); setProfile(p => ({...p, photoReady:false}));
+      void snapshotPhoto(file).then(value => {
+        if (selection !== photoSelection.current || !alive.current) return;
+        photo.current = value; setProfile(p => ({...p, photoReady:true}));
+      }).catch(e => { if (selection === photoSelection.current && alive.current) setError(errorMessage(e)); });
+    },
     sendInterest: id => run(async () => { await api.event('/likes', 'POST', { targetProfileId: id }); await refresh(); }),
     sendMessage: (id, text) => run(async () => {
       const message = await api.event<ApiMessage>(`/conversations/${roomFor(id).id}/messages`, 'POST', { text, clientMessageId: crypto.randomUUID() });
